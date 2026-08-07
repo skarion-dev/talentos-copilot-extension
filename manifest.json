@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TalentOS Application Copilot",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "AI-assisted job application form fill: analyze a form, get a fill plan for the selected candidate, apply it, then review.",
   "permissions": ["activeTab", "scripting", "storage", "tabs", "sidePanel", "downloads"],
   "host_permissions": ["https://*.workers.dev/*", "http://localhost:*/*"],
