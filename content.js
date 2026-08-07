@@ -133,6 +133,9 @@ function initCopilot() {
     if (instr.fieldType === 'skip' || instr.fieldType === 'ai_answer' || instr.fieldType === 'file') {
       return { selector: instr.selector, applied: false, reason: instr.fieldType };
     }
+    if (instr.confidence === 'low') {
+      return { selector: instr.selector, applied: false, reason: 'low_confidence_review' };
+    }
     let el;
     try { el = document.querySelector(instr.selector); } catch { el = null; }
     if (!el) return { selector: instr.selector, applied: false, reason: 'not_found' };

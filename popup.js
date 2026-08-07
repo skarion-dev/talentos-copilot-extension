@@ -88,7 +88,8 @@ function renderPlanPreview(instructions) {
 
 async function analyze() {
   const candidateId = $('candidateSelect').value;
-  if (!candidateId) { setStatus('Pick a candidate first.', 'error'); return; }
+  const linkedApplicationId = applicationIdFromTab();
+  if (!candidateId && !linkedApplicationId) { setStatus('Pick a candidate first, or open this page from an application record.', 'error'); return; }
   setStatus('Scanning form…');
   try {
     const scan = await send('scanForm');
@@ -100,7 +101,8 @@ async function analyze() {
     const resp = await api('/api/extension/v1/copilot/fill-plan', {
       method: 'POST',
       body: JSON.stringify({
-        candidateId,
+        applicationId: applicationId || undefined,
+        candidateId: candidateId || undefined,
         selectedResumeId: $('resumeSelect').value || undefined,
         formSnapshot: scan.fields,
         pageContext: { domain, title: tab.title, url: tab.url },
@@ -108,8 +110,12 @@ async function analyze() {
     });
 
     const fieldLabelBySelector = new Map(scan.fields.map((f) => [f.selector, f.label || f.ariaLabel || f.placeholder || f.name || '']));
+    if (resp.candidateId && candidates.some((c) => c.id === resp.candidateId)) {
+      $('candidateSelect').value = resp.candidateId;
+      renderResumes();
+    }
     currentPlan = {
-      applicationId: resp.applicationId, candidateId, domain, instructions: resp.fillPlan, fieldLabelBySelector,
+      applicationId: resp.applicationId, candidateId: resp.candidateId || candidateId, domain, instructions: resp.fillPlan, fieldLabelBySelector,
       coverLetterFileSelector: resp.coverLetterFileSelector, coverLetterTextSelector: resp.coverLetterTextSelector,
       resumeFileSelector: resp.resumeFileSelector, matchedApplication: resp.matchedApplication || null,
     };
@@ -134,6 +140,17 @@ async function analyze() {
       setStatus(`Plan ready — ${resp.fillPlan.length} fields. Review, then Fill.`, 'success');
     }
   } catch (e) { setStatus(e.message, 'error'); }
+}
+
+function applicationIdFromTab() {
+  try {
+    const url = new URL(tab?.url || '');
+    const hash = url.hash.replace(/^#/, '');
+    const params = new URLSearchParams(hash);
+    return params.get('talentos_application_id') || url.searchParams.get('talentos_application_id') || '';
+  } catch {
+    return '';
+  }
 }
 
 async function fill() {
@@ -198,7 +215,7 @@ async function sendChat() {
   chatHistory.push({ role: 'user', content: message });
   renderChat();
 
-  const candidate = candidates.find((c) => c.id === $('candidateSelect').value);
+    const candidate = candidates.find((c) => c.id === $('candidateSelect').value);
   const sessionContext = {
     candidateName: candidate?.name,
     jobTitle: tab?.title,
@@ -333,6 +350,8 @@ async function refresh() {
   $('resumeFileBtn').disabled = true;
   $('coverLetterBtn').disabled = true;
   $('planPreview').innerHTML = '';
+  const linkedApplicationId = applicationIdFromTab();
+  $('pageTitle').title = linkedApplicationId ? `Linked application: ${linkedApplicationId}` : '';
 }
 chrome.tabs.onActivated.addListener(refresh);
 chrome.tabs.onUpdated.addListener((_i, c, t) => { if (t.active && (c.url || c.status === 'complete')) refresh(); });
