@@ -101,7 +101,7 @@ async function analyze() {
     const resp = await api('/api/extension/v1/copilot/fill-plan', {
       method: 'POST',
       body: JSON.stringify({
-        applicationId: applicationId || undefined,
+        applicationId: linkedApplicationId || undefined,
         candidateId: candidateId || undefined,
         selectedResumeId: $('resumeSelect').value || undefined,
         formSnapshot: scan.fields,
