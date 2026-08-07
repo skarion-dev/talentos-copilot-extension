@@ -10,6 +10,29 @@ if (!window.__tosCopilotReady) {
 }
 
 function initCopilot() {
+  let submissionReported = false;
+  function reportSubmission() {
+    if (submissionReported) return;
+    submissionReported = true;
+    chrome.runtime.sendMessage({ action: 'applicationSubmittedDetected' }).catch(() => {});
+  }
+
+  // ATS forms vary widely: some submit a form, others use a button that
+  // performs an async request. Only react to strong submit/apply wording so
+  // Next/Save/Continue controls do not flip the TalentOS application.
+  document.addEventListener('submit', (event) => {
+    const submitter = event.submitter;
+    const text = `${submitter?.innerText || ''} ${submitter?.value || ''}`.toLowerCase();
+    if (/\b(apply|submit application|submit your application|send application)\b/.test(text)) reportSubmission();
+  }, true);
+  document.addEventListener('click', (event) => {
+    const el = event.target?.closest?.('button, input[type="submit"], [role="button"]');
+    if (!el) return;
+    const text = `${el.innerText || ''} ${el.value || ''} ${el.getAttribute('aria-label') || ''}`.toLowerCase().replace(/\s+/g, ' ');
+    if (/\b(apply now|apply|submit application|submit your application|send application)\b/.test(text)) {
+      window.setTimeout(reportSubmission, 800);
+    }
+  }, true);
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
   // Build a selector that will still resolve this exact element later

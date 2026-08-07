@@ -333,6 +333,16 @@ $('analyzeBtn').onclick = analyze;
 $('fillBtn').onclick = fill;
 $('saveBtn').onclick = saveAndLearn;
 $('toggleSettings').onclick = () => $('settings').classList.toggle('open');
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg.action !== 'applicationSubmittedDetected' || !sender.tab || sender.tab.id !== tab?.id) return;
+  const applicationId = applicationIdFromTab();
+  if (!applicationId) return;
+  api('/api/extension/v1/copilot/application-status', {
+    method: 'POST',
+    body: JSON.stringify({ applicationId, source: 'extension' }),
+  }).then(() => setStatus('Application marked Applied in TalentOS.', 'success'))
+    .catch((e) => setStatus(`Form submitted, but TalentOS status was not updated: ${e.message}`, 'error'));
+});
 $('saveSettings').onclick = async () => {
   settings = { baseUrl: ($('baseUrl').value || DEFAULT_URL).replace(/\/+$/, ''), apiKey: $('apiKey').value.trim() };
   await chrome.storage.local.set({ settings });
@@ -355,6 +365,16 @@ async function refresh() {
   const linkedApplicationId = applicationIdFromTab();
   $('pageTitle').title = linkedApplicationId ? `Linked application: ${linkedApplicationId}` : '';
 }
+
+async function consumePendingApplicationStatus() {
+  const pending = (await chrome.storage.local.get(['pendingApplicationStatus'])).pendingApplicationStatus;
+  if (!pending?.applicationId || !settings.apiKey) return;
+  try {
+    await api('/api/extension/v1/copilot/application-status', { method: 'POST', body: JSON.stringify({ applicationId: decodeURIComponent(pending.applicationId), source: 'extension' }) });
+    await chrome.storage.local.remove('pendingApplicationStatus');
+    setStatus('Application marked Applied in TalentOS.', 'success');
+  } catch (e) { setStatus(`Form submitted, but TalentOS status was not updated: ${e.message}`, 'error'); }
+}
 chrome.tabs.onActivated.addListener(refresh);
 chrome.tabs.onUpdated.addListener((_i, c, t) => { if (t.active && (c.url || c.status === 'complete')) refresh(); });
 
@@ -362,6 +382,6 @@ chrome.storage.local.get(['settings']).then((s) => {
   settings = { baseUrl: s.settings?.baseUrl || DEFAULT_URL, apiKey: s.settings?.apiKey || '' };
   $('baseUrl').value = settings.baseUrl; $('apiKey').value = settings.apiKey;
   refresh();
-  if (settings.apiKey) loadCandidates();
+  if (settings.apiKey) { loadCandidates(); consumePendingApplicationStatus(); }
   else { $('settings').classList.add('open'); setStatus('Add your API key to get started.'); }
 });
