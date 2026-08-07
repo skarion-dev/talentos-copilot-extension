@@ -292,9 +292,11 @@ async function attachResumeFile() {
       return;
     }
     setStatus('Downloading resume…');
-    const blob = await apiBlob(`/api/extension/v1/resume-download?url=${encodeURIComponent(lookup.url)}`);
     const candidate = candidates.find((c) => c.id === currentPlan.candidateId);
     const fileName = window.TosPdfGen.professionalFileName(candidate?.name, 'Resume');
+    const blob = lookup.inlineText
+      ? window.TosPdfGen.buildResumePdf(candidate?.name, lookup.inlineText)
+      : await apiBlob(`/api/extension/v1/resume-download?url=${encodeURIComponent(lookup.url)}`);
     const result = await attachOrDownload(currentPlan.resumeFileSelector, blob, fileName, 'application/pdf', 'resume');
     setStatus(result.message, result.attached ? 'success' : 'error');
   } catch (e) { setStatus(e.message, 'error'); }

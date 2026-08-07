@@ -57,4 +57,26 @@ function buildCoverLetterPdf(candidateName, letterText) {
   return doc.output('blob');
 }
 
-window.TosPdfGen = { professionalFileName, buildCoverLetterPdf };
+function buildResumePdf(candidateName, resumeText) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const marginX = 54, maxWidth = 504, lineHeight = 13;
+  let y = 54;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text(String(candidateName || 'Candidate'), marginX, y); y += 24;
+  doc.setFontSize(9.5);
+  for (const raw of String(resumeText || '').replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    if (!line) { y += 7; continue; }
+    const heading = /^(summary|professional summary|experience|work experience|education|skills|technical skills|certifications|projects|contact)$/i.test(line);
+    doc.setFont('helvetica', heading ? 'bold' : 'normal'); doc.setFontSize(heading ? 11 : 9.5);
+    for (const part of doc.splitTextToSize(line, maxWidth)) {
+      if (y > 744) { doc.addPage(); y = 54; }
+      doc.text(part, marginX, y); y += lineHeight;
+    }
+    if (heading) y += 3;
+  }
+  return doc.output('blob');
+}
+
+window.TosPdfGen = { professionalFileName, buildCoverLetterPdf, buildResumePdf };
