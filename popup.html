@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset="utf-8"/><title>TalentOS Application Copilot</title><style>
+body{font:13px system-ui,sans-serif;margin:0;padding:14px;width:360px;color:#1f2328}
+h1{font-size:14px;margin:0 0 10px}
+select,input{width:100%;padding:6px;margin:4px 0 8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box}
+button{width:100%;padding:9px;border:0;border-radius:6px;background:#7c3aed;color:#fff;font-weight:600;cursor:pointer;margin-top:6px}
+button:disabled{background:#9ca3af;cursor:not-allowed}
+button.secondary{background:#f3f4f6;color:#1f2328}
+.status{font-size:12px;margin-top:8px;min-height:32px}
+.status.error{color:#b91c1c}.status.success{color:#057642}
+.meta{font-size:11px;color:#6b7280;margin:4px 0;word-break:break-word}
+label{font-size:11px;font-weight:600;color:#374151}
+#settings{display:none;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb}#settings.open{display:block}
+#planPreview{max-height:220px;overflow-y:auto;margin-top:8px;border:1px solid #e5e7eb;border-radius:6px}
+.planRow{padding:6px 8px;border-bottom:1px solid #f3f4f6;font-size:11px}
+.planRow.low{background:#fff7ed}
+.planLabel{color:#6b7280;margin-bottom:2px}
+.planVal{font-weight:600}
+.badge{font-weight:400;font-size:10px;color:#7c3aed;background:#f3e8ff;border-radius:3px;padding:1px 4px;margin-left:4px}
+.tabs{display:flex;gap:4px;margin:8px 0}
+.tab{flex:1;padding:6px;text-align:center;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;background:#f3f4f6;color:#6b7280}
+.tab.active{background:#7c3aed;color:#fff}
+.tabPanel{display:none}
+.tabPanel.active{display:block}
+#chatLog{max-height:260px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:6px;margin-top:8px;font-size:12px}
+.chatMsg{margin-bottom:8px}
+.chatMsg .who{font-weight:600;font-size:10px;color:#6b7280;margin-bottom:2px}
+.chatMsg.user .who{color:#7c3aed}
+.chatRow{display:flex;gap:6px;margin-top:8px}
+.chatRow input{margin:0;flex:1}
+.chatRow button{width:auto;margin:0;padding:8px 12px}
+</style></head><body>
+<h1>TalentOS Application Copilot</h1>
+<div class="meta" id="pageTitle">—</div>
+
+<div class="tabs">
+  <div class="tab active" id="tabFill">Fill</div>
+  <div class="tab" id="tabChat">Chat</div>
+</div>
+
+<div class="tabPanel active" id="panelFill">
+  <label>Candidate</label>
+  <select id="candidateSelect"><option>Loading…</option></select>
+  <label>Resume</label>
+  <select id="resumeSelect"><option>—</option></select>
+
+  <button id="analyzeBtn">Analyze Form</button>
+  <button class="secondary" id="fillBtn" disabled>Fill Form</button>
+  <button class="secondary" id="saveBtn" disabled>Save &amp; Learn</button>
+  <button class="secondary" id="resumeFileBtn" disabled>Attach Resume PDF</button>
+  <button class="secondary" id="coverLetterBtn" disabled>Generate Cover Letter</button>
+
+  <div id="planPreview"></div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="tabPanel" id="panelChat">
+  <div class="meta">Ask about the current form — why a field was filled or skipped, what to put somewhere. Scoped to this session only.</div>
+  <div id="chatLog"></div>
+  <div class="chatRow">
+    <input id="chatInput" type="text" placeholder="Ask a question…"/>
+    <button id="chatSendBtn">Send</button>
+  </div>
+</div>
+
+<button class="secondary" id="toggleSettings">Settings</button>
+<div id="settings">
+  <label>TalentOS URL</label><input id="baseUrl"/>
+  <label>API key (tos_… — needs extension:queue:read + extension:evidence:write)</label>
+  <input id="apiKey" type="password"/>
+  <button id="saveSettings">Save</button>
+</div>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="pdfGen.js"></script>
+<script src="popup.js"></script></body></html>
