@@ -74,10 +74,11 @@ function initCopilot() {
     if (el.type === 'radio' || el.type === 'checkbox') {
       const group = el.closest('fieldset, [role="group"], .application-question, .form-group, .field, .crc-form-row');
       if (group) {
-        const groupLabel = group.querySelector('legend, .application-label, .field-label, .question-label, .label, label:not(:has(input))');
+        const candidateLabels = [...group.querySelectorAll('legend, .application-label, .field-label, .question-label, .crm-from-label, .crm-form-label, label, span')];
+        const groupLabel = candidateLabels.find((lbl) => !lbl.querySelector('input') && clean(lbl.innerText).length > 2);
         if (groupLabel) {
           const t = clean(groupLabel.innerText);
-          if (t && t.length > 2) return t;
+          if (t) return t;
         }
         const prior = group.querySelector('.application-label, legend') || group.previousElementSibling;
         if (prior && prior.innerText) {
