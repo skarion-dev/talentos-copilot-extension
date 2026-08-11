@@ -6,24 +6,38 @@ const fixtures = [
   'ashby.html', 'smartrecruiters.html', 'zoho.html',
 ];
 
-async function installContentScript(page) {
+async function setupMockChrome(page) {
   await page.addInitScript(() => {
     window.__messages = {};
-    window.chrome = { runtime: { onMessage: { addListener(fn) { window.__messages.handler = fn; } } } };
+    window.chrome = {
+      runtime: {
+        onMessage: {
+          addListener(fn) { window.__messages.handler = fn; },
+        },
+        sendMessage() {},
+      },
+    };
   });
+}
+
+async function injectContentScript(page) {
   await page.addScriptTag({ path: path.join(__dirname, '..', 'content.js') });
 }
 
 async function message(page, action, payload = {}) {
   return page.evaluate(({ action, payload }) => new Promise((resolve) => {
+    if (!window.__messages?.handler) {
+      throw new Error('Content script message handler not ready');
+    }
     window.__messages.handler({ action, ...payload }, {}, resolve);
   }), { action, payload });
 }
 
 for (const fixture of fixtures) {
   test(`${fixture} scans fields and applies safe values`, async ({ page }) => {
+    await setupMockChrome(page);
     await page.goto('file://' + path.join(__dirname, '..', 'fixtures', fixture));
-    await installContentScript(page);
+    await injectContentScript(page);
 
     const scan = await message(page, 'scanForm');
     expect(scan.ok).toBeTruthy();
