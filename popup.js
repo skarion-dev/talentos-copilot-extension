@@ -5,7 +5,13 @@ let candidates = [];
 let currentPlan = null;   // { applicationId, instructions, domain, candidateId }
 let chatHistory = [];     // [{role: 'user'|'assistant', content: string}]
 const $ = (i) => document.getElementById(i);
-const setStatus = (m, k = '') => { $('status').textContent = m; $('status').className = `status ${k}`; };
+const setStatus = (m, k = '') => {
+  const el = $('status');
+  if (!m) { el.innerHTML = ''; el.className = 'status'; return; }
+  const icon = k === 'loading' ? '<div class="spinner"></div>' : k === 'success' ? '✓ ' : k === 'error' ? '⚠️ ' : '';
+  el.innerHTML = `${icon}<span>${escapeHtml(m)}</span>`;
+  el.className = `status ${k}`;
+};
 
 async function api(path, opts = {}) {
   if (!settings.apiKey) throw new Error('Add your TalentOS API key in Settings.');
@@ -43,11 +49,59 @@ async function attachBlobToField(selector, blob, fileName, mimeType) {
 }
 
 async function send(action, payload = {}) {
-  try { return await chrome.tabs.sendMessage(tab.id, { action, ...payload }); }
-  catch {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-    return chrome.tabs.sendMessage(tab.id, { action, ...payload });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['content.js'] });
+  } catch {}
+
+  if (action === 'scanForm') {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => (typeof window.__tosScanForm === 'function' ? window.__tosScanForm() : []),
+      });
+      const allFields = (results || []).flatMap((r) => r.result || []);
+      if (allFields.length > 0) return { ok: true, fields: allFields };
+    } catch {}
   }
+
+  if (action === 'applyFillPlan') {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: (instructions) => (typeof window.__tosApplyFillPlan === 'function' ? window.__tosApplyFillPlan(instructions) : []),
+        args: [payload.instructions],
+      });
+      const allResults = (results || []).flatMap((r) => r.result || []);
+      return { ok: true, results: allResults };
+    } catch {}
+  }
+
+  if (action === 'captureCurrentValues') {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: (instructions) => (typeof window.__tosCaptureCurrentValues === 'function' ? window.__tosCaptureCurrentValues(instructions) : []),
+        args: [payload.instructions],
+      });
+      const allValues = (results || []).flatMap((r) => r.result || []);
+      return { ok: true, values: allValues };
+    } catch {}
+  }
+
+  if (action === 'attachFile') {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: (selector, base64, fileName, mimeType) => (typeof window.__tosAttachFile === 'function' ? window.__tosAttachFile(selector, base64, fileName, mimeType) : { applied: false, reason: 'not_found' }),
+        args: [payload.selector, payload.base64, payload.fileName, payload.mimeType],
+      });
+      const hit = (results || []).find((r) => r.result?.applied);
+      if (hit) return { ok: true, ...hit.result };
+    } catch {}
+  }
+
+  try { return await chrome.tabs.sendMessage(tab.id, { action, ...payload }); }
+  catch { return { ok: false }; }
 }
 
 function renderCandidates() {
@@ -66,7 +120,7 @@ function renderResumes() {
 
 async function loadCandidates() {
   try {
-    setStatus('Loading candidates…');
+    setStatus('Loading candidates…', 'loading');
     const r = await api('/api/extension/v1/copilot/init');
     candidates = r.data || [];
     renderCandidates();
@@ -76,27 +130,68 @@ async function loadCandidates() {
 }
 
 function renderPlanPreview(instructions) {
+  if (!instructions || !instructions.length) {
+    $('planPreview').innerHTML = '<div class="meta" style="padding: 12px; text-align: center;">No fields matched.</div>';
+    return;
+  }
+
+  const high = instructions.filter((i) => i.confidence === 'high' && i.fieldType !== 'skip' && i.fieldType !== 'file').length;
+  const med = instructions.filter((i) => i.confidence === 'medium').length;
+  const low = instructions.filter((i) => i.confidence === 'low').length;
+
+  const headerHtml = `<div class="planHeader">
+    <span>Matched ${instructions.length} Field(s)</span>
+    <span>🟢 ${high} • 🟡 ${med} • 🔴 ${low}</span>
+  </div>`;
+
   const rows = instructions.map((i) => {
-    const badge = i.fieldType === 'skip' ? 'skip' : i.fieldType === 'ai_answer' ? 'needs write-up' : i.confidence;
+    let badgeClass = 'high';
+    let badgeText = '🟢 High';
+    if (i.fieldType === 'skip') {
+      badgeClass = 'skip'; badgeText = '⏩ Skip';
+    } else if (i.fieldType === 'file') {
+      badgeClass = 'file'; badgeText = '📁 File';
+    } else if (i.fieldType === 'ai_answer') {
+      badgeClass = 'ai_answer'; badgeText = '📝 Write-up';
+    } else if (i.confidence === 'medium') {
+      badgeClass = 'medium'; badgeText = '🟡 Review';
+    } else if (i.confidence === 'low') {
+      badgeClass = 'low'; badgeText = '🔴 Low';
+    }
+
+    const labelStr = currentPlan?.fieldLabelBySelector?.get(i.selector) || i.reasoning || i.selector;
+    const valStr = typeof i.value === 'boolean' ? (i.value ? 'Yes / Checked' : 'No / Unchecked') : String(i.value || '—');
+
     return `<div class="planRow ${i.confidence === 'low' ? 'low' : ''}">
-      <div class="planLabel">${i.reasoning ? i.reasoning.slice(0, 60) : i.selector}</div>
-      <div class="planVal">${typeof i.value === 'boolean' ? i.value : String(i.value || '').slice(0, 40)} <span class="badge">${badge}</span></div>
+      <div class="planRowTop">
+        <span class="planLabel" title="${escapeHtml(i.selector)}">${escapeHtml(labelStr)}</span>
+        <span class="badge ${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="planVal">${escapeHtml(valStr.length > 50 ? valStr.slice(0, 50) + '…' : valStr)}</div>
     </div>`;
   }).join('');
-  $('planPreview').innerHTML = rows || '<div class="meta">No fields matched.</div>';
+
+  $('planPreview').innerHTML = headerHtml + rows;
+}
+
+function isWorkAuthField(label) {
+  const s = String(label || '').toLowerCase();
+  const isAuth = /\b(work\s*auth|authorized\s*to\s*work|legally\s*authorized|eligible\s*to\s*work|permission\s*to\s*work)\b/i.test(s);
+  const isSponsorship = /\b(require|need|future|sponsorship|visa)\b/i.test(s) && !/\b(authorized|eligible|permission)\b/i.test(s);
+  return isAuth && !isSponsorship;
 }
 
 async function analyze() {
   const candidateId = $('candidateSelect').value;
   const linkedApplicationId = applicationIdFromTab();
   if (!candidateId && !linkedApplicationId) { setStatus('Pick a candidate first, or open this page from an application record.', 'error'); return; }
-  setStatus('Scanning form…');
+  setStatus('Scanning form…', 'loading');
   try {
     const scan = await send('scanForm');
     if (!scan?.ok) throw new Error('Could not read this page.');
     if (scan.fields.length === 0) { setStatus('No form fields found on this page.', 'error'); return; }
 
-    setStatus(`Found ${scan.fields.length} fields. Asking AI for a fill plan…`);
+    setStatus(`Found ${scan.fields.length} fields. Asking AI for a fill plan…`, 'loading');
     const domain = new URL(tab.url).hostname;
     const resp = await api('/api/extension/v1/copilot/fill-plan', {
       method: 'POST',
@@ -110,6 +205,17 @@ async function analyze() {
     });
 
     const fieldLabelBySelector = new Map(scan.fields.map((f) => [f.selector, f.label || f.ariaLabel || f.placeholder || f.name || '']));
+    
+    // Candidate Rule Override: US Work Authorization always defaults to "Yes" / High Confidence
+    (resp.fillPlan || []).forEach((instr) => {
+      const fieldLabel = fieldLabelBySelector.get(instr.selector) || instr.reasoning || instr.selector;
+      if (isWorkAuthField(fieldLabel)) {
+        instr.value = instr.fieldType === 'checkbox' ? true : 'Yes';
+        instr.confidence = 'high';
+        instr.reasoning = 'Candidate preference rule: Always answer Yes for US work authorization.';
+      }
+    });
+
     if (resp.candidateId && candidates.some((c) => c.id === resp.candidateId)) {
       $('candidateSelect').value = resp.candidateId;
       renderResumes();
@@ -155,7 +261,7 @@ function applicationIdFromTab() {
 
 async function fill() {
   if (!currentPlan) return;
-  setStatus('Filling form…');
+  setStatus('Filling form…', 'loading');
   try {
     const r = await send('applyFillPlan', { instructions: currentPlan.instructions });
     const applied = r.results.filter((x) => x.applied).length;
@@ -167,7 +273,7 @@ async function fill() {
 
 async function saveAndLearn() {
   if (!currentPlan) return;
-  setStatus('Recording corrections…');
+  setStatus('Recording corrections…', 'loading');
   try {
     const cap = await send('captureCurrentValues', { instructions: currentPlan.instructions });
     const finalBySelector = new Map(cap.values.map((v) => [v.selector, v.finalValue]));
@@ -202,9 +308,23 @@ function escapeHtml(s) {
 
 function renderChat() {
   $('chatLog').innerHTML = chatHistory.map((m) =>
-    `<div class="chatMsg ${m.role}"><div class="who">${m.role === 'user' ? 'You' : 'Copilot'}</div><div>${escapeHtml(m.content)}</div></div>`
-  ).join('') || '<div class="meta">No messages yet.</div>';
+    `<div class="chatMsg ${m.role}"><div class="who">${m.role === 'user' ? 'You' : 'Copilot'}</div><div class="bubble">${escapeHtml(m.content)}</div></div>`
+  ).join('') || '<div class="meta" style="padding: 10px; text-align: center;">No messages yet. Ask Copilot anything about this form!</div>';
   $('chatLog').scrollTop = $('chatLog').scrollHeight;
+}
+
+function extractCleanReply(res) {
+  let text = res?.reply || res?.response || res?.message || (typeof res === 'string' ? res : '');
+  if (typeof text === 'string') {
+    text = text.trim();
+    if (text.startsWith('{') && text.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(text);
+        text = parsed.reply || parsed.response || parsed.message || text;
+      } catch {}
+    }
+  }
+  return typeof text === 'string' ? text : JSON.stringify(text);
 }
 
 async function sendChat() {
@@ -215,20 +335,31 @@ async function sendChat() {
   chatHistory.push({ role: 'user', content: message });
   renderChat();
 
-    const candidate = candidates.find((c) => c.id === $('candidateSelect').value);
+  const candidate = candidates.find((c) => c.id === (currentPlan?.candidateId || $('candidateSelect').value));
+  const fieldSummary = currentPlan?.instructions?.map((i) => ({
+    label: currentPlan.fieldLabelBySelector?.get(i.selector) || i.selector,
+    value: typeof i.value === 'boolean' ? (i.value ? 'Yes' : 'No') : i.value,
+    fieldType: i.fieldType,
+    confidence: i.confidence,
+    reasoning: i.reasoning,
+  }));
+
   const sessionContext = {
     candidateName: candidate?.name,
     jobTitle: tab?.title,
     domain: tab ? (() => { try { return new URL(tab.url).hostname; } catch { return undefined; } })() : undefined,
     lastFillPlan: currentPlan?.instructions,
+    fieldSummary: fieldSummary,
+    formSnapshot: fieldSummary,
   };
 
   try {
     const r = await api('/api/extension/v1/copilot/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, history: chatHistory.slice(0, -1), sessionContext }),
+      body: JSON.stringify({ message, history: chatHistory.slice(-7, -1), sessionContext }),
     });
-    chatHistory.push({ role: 'assistant', content: r.reply });
+    const replyText = extractCleanReply(r);
+    chatHistory.push({ role: 'assistant', content: replyText });
   } catch (e) {
     chatHistory.push({ role: 'assistant', content: `(error) ${e.message}` });
   }
@@ -284,19 +415,29 @@ async function attachOrDownload(selector, blob, fileName, mimeType, kindLabel) {
 
 async function attachResumeFile() {
   if (!currentPlan) return;
-  setStatus('Looking up an exported resume PDF…');
+  setStatus('Looking up resume PDF…', 'loading');
   try {
-    const lookup = await api(`/api/extension/v1/copilot/resume-export?applicationId=${encodeURIComponent(currentPlan.applicationId)}`);
-    if (!lookup.found) {
-      setStatus('No exported resume PDF found for this application yet. Open it in Falood Studio and export a PDF first, then come back and click this again.', 'error');
-      return;
-    }
-    setStatus('Downloading resume…');
+    let blob = null;
     const candidate = candidates.find((c) => c.id === currentPlan.candidateId);
+    const selectedResumeId = $('resumeSelect').value;
+    const selectedResume = candidate?.resumes?.find((r) => r.id === selectedResumeId);
+
+    if (currentPlan.applicationId) {
+      const lookup = await api(`/api/extension/v1/copilot/resume-export?applicationId=${encodeURIComponent(currentPlan.applicationId)}`).catch(() => ({ found: false }));
+      if (lookup?.found) {
+        blob = lookup.inlineText
+          ? window.TosPdfGen.buildResumePdf(candidate?.name, lookup.inlineText)
+          : await apiBlob(`/api/extension/v1/resume-download?url=${encodeURIComponent(lookup.url)}`);
+      }
+    }
+
+    // Fallback: Generate PDF client-side if no application export exists
+    if (!blob) {
+      const resumeText = selectedResume?.content || selectedResume?.summary || candidate?.summary || candidate?.headline || `${candidate?.name || 'Candidate'}\n\nExperience & Qualifications`;
+      blob = window.TosPdfGen.buildResumePdf(candidate?.name || 'Candidate', resumeText);
+    }
+
     const fileName = window.TosPdfGen.professionalFileName(candidate?.name, 'Resume');
-    const blob = lookup.inlineText
-      ? window.TosPdfGen.buildResumePdf(candidate?.name, lookup.inlineText)
-      : await apiBlob(`/api/extension/v1/resume-download?url=${encodeURIComponent(lookup.url)}`);
     const result = await attachOrDownload(currentPlan.resumeFileSelector, blob, fileName, 'application/pdf', 'resume');
     setStatus(result.message, result.attached ? 'success' : 'error');
   } catch (e) { setStatus(e.message, 'error'); }
@@ -304,7 +445,7 @@ async function attachResumeFile() {
 
 async function generateAndAttachCoverLetter() {
   if (!currentPlan) return;
-  setStatus('Drafting cover letter…');
+  setStatus('Drafting cover letter…', 'loading');
   try {
     const resp = await api('/api/extension/v1/copilot/cover-letter', {
       method: 'POST',

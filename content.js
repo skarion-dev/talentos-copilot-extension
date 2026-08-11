@@ -58,16 +58,50 @@ function initCopilot() {
   }
 
   function labelFor(el) {
+    const ariaBy = el.getAttribute('aria-labelledby');
+    if (ariaBy) {
+      const texts = ariaBy.split(/\s+/).map((id) => {
+        let target;
+        try { target = document.getElementById(id); } catch { target = null; }
+        return target ? clean(target.innerText) : '';
+      }).filter(Boolean);
+      if (texts.length) return texts.join(' ');
+    }
+
+    // For radios/checkboxes: The parent group container (fieldset, .application-question, .form-group)
+    // contains the actual question prompt (e.g. "Are you legally authorized to work..."),
+    // whereas el.closest('label') is just the option choice text ("Yes" / "No").
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      const group = el.closest('fieldset, [role="group"], .application-question, .form-group, .field, .crc-form-row');
+      if (group) {
+        const groupLabel = group.querySelector('legend, .application-label, .field-label, .question-label, .label, label:not(:has(input))');
+        if (groupLabel) {
+          const t = clean(groupLabel.innerText);
+          if (t && t.length > 2) return t;
+        }
+        const prior = group.querySelector('.application-label, legend') || group.previousElementSibling;
+        if (prior && prior.innerText) {
+          const t = clean(prior.innerText);
+          if (t && t.length < 250) return t;
+        }
+      }
+    }
+
     if (el.id) {
       const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (lbl) return clean(lbl.innerText);
     }
+
+    // Wrap label check (for non-radios, or if group label wasn't found)
     const wrapLabel = el.closest('label');
-    if (wrapLabel) return clean(wrapLabel.innerText);
+    if (wrapLabel && el.type !== 'radio' && el.type !== 'checkbox') {
+      return clean(wrapLabel.innerText);
+    }
+
     // Common pattern: label/legend sibling above the field's container.
     const container = el.closest('div,fieldset,td,li');
     if (container) {
-      const legend = container.querySelector('legend');
+      const legend = container.querySelector('legend, .application-label, .field-label');
       if (legend) return clean(legend.innerText);
       const prior = container.previousElementSibling;
       if (prior && /label|legend|span|div/i.test(prior.tagName)) {
@@ -75,21 +109,15 @@ function initCopilot() {
         if (t && t.length < 200) return t;
       }
     }
-    // Component-library ATS forms (Zoho Recruit confirmed live, likely others
-    // built on similar wrapper-heavy patterns) nest the input several levels
-    // below its label, with the label as a sibling of an ANCESTOR wrapper,
-    // not the input's own immediate container. e.g. Zoho:
-    //   div.crc-form-row > label.crm-from-label + div.crc-form-field > ... > input
-    // Walk up to 6 ancestor levels; at each step check if the level we just
-    // left has a previous sibling that IS or CONTAINS a <label>, or is a
-    // short-text element whose class name mentions "label".
+
+    // Component-library ATS forms (Zoho Recruit, Lever, Ashby, Workday)
     let node = el;
     for (let i = 0; i < 6 && node && node !== document.body; i++) {
       const parent = node.parentElement;
       if (!parent) break;
       const sib = node.previousElementSibling;
       if (sib) {
-        const labelEl = sib.matches('label') ? sib : sib.querySelector('label');
+        const labelEl = sib.matches('label') ? sib : sib.querySelector('label, .application-label');
         if (labelEl) { const t = clean(labelEl.innerText); if (t) return t; }
         if (/label/i.test(sib.className || '')) {
           const t = clean(sib.innerText);
@@ -101,13 +129,25 @@ function initCopilot() {
     return clean(el.getAttribute('aria-label') || el.placeholder || '');
   }
 
+  function radioChoiceLabel(r) {
+    const wrapLabel = r.closest('label');
+    if (wrapLabel) return clean(wrapLabel.innerText);
+    if (r.id) {
+      const lbl = document.querySelector(`label[for="${CSS.escape(r.id)}"]`);
+      if (lbl) return clean(lbl.innerText);
+    }
+    const sib = r.nextElementSibling || r.previousElementSibling;
+    if (sib) return clean(sib.innerText);
+    return clean(r.value || '');
+  }
+
   function optionsFor(el) {
     if (el.tagName === 'SELECT') {
       return [...el.options].map((o) => clean(o.textContent)).filter(Boolean);
     }
     if (el.type === 'radio' && el.name) {
       return [...document.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)]
-        .map((r) => labelFor(r)).filter(Boolean);
+        .map((r) => radioChoiceLabel(r)).filter(Boolean);
     }
     return undefined;
   }
@@ -115,13 +155,29 @@ function initCopilot() {
   function isFillable(el) {
     if (el.disabled || el.readOnly) return false;
     if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return false; // hidden via layout
+    if (el.type !== 'file' && el.type !== 'radio' && el.type !== 'checkbox') {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return false; // hidden via layout
+    }
     return true;
   }
 
+  function getAllFormElements(root = document) {
+    const elements = [];
+    const nodes = root.querySelectorAll('input, select, textarea, *');
+    for (const node of nodes) {
+      if (/^(input|select|textarea)$/i.test(node.tagName)) {
+        elements.push(node);
+      }
+      if (node.shadowRoot) {
+        elements.push(...getAllFormElements(node.shadowRoot));
+      }
+    }
+    return elements;
+  }
+
   function scanForm() {
-    const els = [...document.querySelectorAll('input, select, textarea')].filter(isFillable);
+    const els = getAllFormElements(document).filter(isFillable);
     const fields = els.map((el) => ({
       selector: selectorFor(el),
       type: el.tagName.toLowerCase(),
@@ -171,8 +227,9 @@ function initCopilot() {
     if (instr.fieldType === 'radio') {
       const group = [...document.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)];
       const target = group.find((r) => {
-        const l = labelFor(r).toLowerCase();
-        return l === String(instr.value).toLowerCase() || l.includes(String(instr.value).toLowerCase());
+        const choiceText = radioChoiceLabel(r).toLowerCase();
+        const want = String(instr.value).toLowerCase();
+        return choiceText === want || choiceText.includes(want) || want.includes(choiceText);
       });
       if (target) { target.click(); return { selector: instr.selector, applied: true }; }
       return { selector: instr.selector, applied: false, reason: 'no_matching_option' };
@@ -233,6 +290,11 @@ function initCopilot() {
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return { applied: true };
   }
+
+  window.__tosScanForm = scanForm;
+  window.__tosApplyFillPlan = applyFillPlan;
+  window.__tosCaptureCurrentValues = captureCurrentValues;
+  window.__tosAttachFile = attachFile;
 
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
     if (msg.action === 'scanForm') {
