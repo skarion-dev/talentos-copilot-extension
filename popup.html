@@ -223,10 +223,39 @@
     border: 1px solid var(--success-border);
   }
 
+  .status.warning {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+  }
+
   .status.loading {
     background: #f1f5f9;
     color: #334155;
     border: 1px solid #e2e8f0;
+  }
+
+  .btnDraft {
+    margin-top: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    background: #f3e8ff;
+    border: 1px solid #d8b4fe;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btnDraft:hover {
+    background: #e9d5ff;
+    border-color: var(--primary);
+  }
+
+  .btnDraft:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .spinner {

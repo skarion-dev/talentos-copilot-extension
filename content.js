@@ -323,10 +323,47 @@ function initCopilot() {
     return { applied: true };
   }
 
+  function auditRequiredFields() {
+    const els = getAllFormElements(document).filter((el) => !el.disabled && el.type !== 'hidden' && el.type !== 'submit' && el.type !== 'button');
+    const missing = [];
+    for (const el of els) {
+      const isReq = el.required || el.getAttribute('aria-required') === 'true' || !!el.closest('.required, [data-required="true"]');
+      if (!isReq) continue;
+
+      let isEmpty = false;
+      if (el.type === 'checkbox') {
+        isEmpty = !el.checked;
+      } else if (el.type === 'radio' && el.name) {
+        const group = [...document.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)];
+        isEmpty = !group.some((r) => r.checked);
+      } else if (el.type === 'file') {
+        isEmpty = !el.files || el.files.length === 0;
+      } else {
+        isEmpty = !String(el.value || '').trim();
+      }
+
+      if (isEmpty) {
+        missing.push({
+          selector: selectorFor(el),
+          label: labelFor(el) || el.name || 'Required Field',
+        });
+      }
+    }
+    const seenSelectors = new Set();
+    const uniqueMissing = missing.filter((m) => {
+      if (seenSelectors.has(m.selector)) return false;
+      seenSelectors.add(m.selector);
+      return true;
+    });
+
+    return { ok: true, missing: uniqueMissing };
+  }
+
   window.__tosScanForm = scanForm;
   window.__tosApplyFillPlan = applyFillPlan;
   window.__tosCaptureCurrentValues = captureCurrentValues;
   window.__tosAttachFile = attachFile;
+  window.__tosAuditRequiredFields = auditRequiredFields;
 
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
     if (msg.action === 'scanForm') {
@@ -343,6 +380,10 @@ function initCopilot() {
     }
     if (msg.action === 'attachFile') {
       sendResponse({ ok: true, ...attachFile(msg.selector, msg.base64, msg.fileName, msg.mimeType) });
+      return true;
+    }
+    if (msg.action === 'auditRequiredFields') {
+      sendResponse(auditRequiredFields());
       return true;
     }
     return false;

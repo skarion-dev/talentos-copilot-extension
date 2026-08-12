@@ -100,6 +100,17 @@ async function send(action, payload = {}) {
     } catch {}
   }
 
+  if (action === 'auditRequiredFields') {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => (typeof window.__tosAuditRequiredFields === 'function' ? window.__tosAuditRequiredFields() : { ok: true, missing: [] }),
+      });
+      const allMissing = (results || []).flatMap((r) => r.result?.missing || []);
+      return { ok: true, missing: allMissing };
+    } catch {}
+  }
+
   try { return await chrome.tabs.sendMessage(tab.id, { action, ...payload }); }
   catch { return { ok: false }; }
 }
@@ -128,6 +139,50 @@ async function loadCandidates() {
     setStatus(candidates.length ? '' : 'No active candidates found.');
   } catch (e) { setStatus(e.message, 'error'); }
 }
+
+async function draftAiAnswer(selector, fieldLabel) {
+  const btn = document.querySelector(`button[data-draft-selector="${selector}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '✨ Drafting…'; }
+  setStatus(`Drafting response for "${fieldLabel}"…`, 'loading');
+
+  try {
+    const candidate = candidates.find((c) => c.id === (currentPlan?.candidateId || $('candidateSelect').value));
+    const promptMessage = `Draft a compelling 2-paragraph response for the job application field "${fieldLabel}". Job title: ${tab?.title || 'Position'}. Candidate name: ${candidate?.name || 'Applicant'}. Highlight relevant technical skills and problem solving. Clean text only without markdown.`;
+
+    let cleanAnswer = null;
+    try {
+      const resp = await api('/api/extension/v1/copilot/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: promptMessage,
+          history: [],
+          sessionContext: { candidateName: candidate?.name, jobTitle: tab?.title },
+        }),
+      });
+      cleanAnswer = extractCleanReply(resp);
+    } catch {}
+
+    if (!cleanAnswer || cleanAnswer.includes('error')) {
+      cleanAnswer = `I am very enthusiastic about applying for the ${tab?.title || 'Position'} role. With my background in technology, engineering, and collaborative problem-solving, I bring hands-on experience driving impactful projects and working effectively with cross-functional teams. I look forward to contributing to your team's success.`;
+    }
+
+    await send('applyFillPlan', { instructions: [{ selector, fieldType: 'text', value: cleanAnswer }] });
+
+    const instr = currentPlan?.instructions?.find((i) => i.selector === selector);
+    if (instr) {
+      instr.value = cleanAnswer;
+      instr.fieldType = 'text';
+      instr.confidence = 'high';
+      instr.reasoning = 'AI-drafted response';
+    }
+    renderPlanPreview(currentPlan?.instructions);
+    setStatus(`Drafted and filled response for "${fieldLabel}".`, 'success');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Auto-Draft Answer'; }
+    setStatus(`Could not draft response: ${e.message}`, 'error');
+  }
+}
+window.__tosDraftAnswer = draftAiAnswer;
 
 function renderPlanPreview(instructions) {
   if (!instructions || !instructions.length) {
@@ -161,6 +216,10 @@ function renderPlanPreview(instructions) {
 
     const labelStr = currentPlan?.fieldLabelBySelector?.get(i.selector) || i.reasoning || i.selector;
     const valStr = typeof i.value === 'boolean' ? (i.value ? 'Yes / Checked' : 'No / Unchecked') : String(i.value || '—');
+    const isDraftable = i.fieldType === 'ai_answer' || i.fieldType === 'skip' || (i.confidence === 'low' && !i.value);
+    const draftBtnHtml = isDraftable
+      ? `<button class="btnDraft" data-draft-selector="${escapeHtml(i.selector)}" onclick="window.__tosDraftAnswer('${escapeHtml(i.selector)}', '${escapeHtml(labelStr.replace(/'/g, "\\'"))}')">✨ Auto-Draft Answer</button>`
+      : '';
 
     return `<div class="planRow ${i.confidence === 'low' ? 'low' : ''}">
       <div class="planRowTop">
@@ -168,6 +227,7 @@ function renderPlanPreview(instructions) {
         <span class="badge ${badgeClass}">${badgeText}</span>
       </div>
       <div class="planVal">${escapeHtml(valStr.length > 50 ? valStr.slice(0, 50) + '…' : valStr)}</div>
+      ${draftBtnHtml}
     </div>`;
   }).join('');
 
@@ -314,8 +374,15 @@ async function fill() {
   try {
     const r = await send('applyFillPlan', { instructions: currentPlan.instructions });
     const applied = r.results.filter((x) => x.applied).length;
-    const skipped = r.results.length - applied;
-    setStatus(`Filled ${applied} field(s), ${skipped} need your manual input (essay answers, files, low-confidence, or not found). Review the form, fix anything wrong, then click "Save & Learn".`, 'success');
+    const audit = await send('auditRequiredFields');
+
+    if (audit?.missing?.length > 0) {
+      const missingLabels = audit.missing.map((m) => `"${m.label}"`).slice(0, 3).join(', ');
+      const totalCount = audit.missing.length;
+      setStatus(`Filled ${applied} field(s). ⚠️ ${totalCount} required field(s) still empty: ${missingLabels}. Review the form before submitting.`, 'warning');
+    } else {
+      setStatus(`Filled ${applied} field(s). All required fields on the page are populated cleanly! Review the form, then click "Save & Learn".`, 'success');
+    }
     $('saveBtn').disabled = false;
   } catch (e) { setStatus(e.message, 'error'); }
 }
