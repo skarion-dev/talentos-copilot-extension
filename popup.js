@@ -273,9 +273,22 @@ function isWorkAuthField(label) {
   return isAuth && !isSponsorship;
 }
 
-function isSensitiveDemographicField(label) {
+function isCandidateMandatoryManualField(label) {
   const s = String(label || '').toLowerCase();
-  return /\b(disability|disabled|veteran|military|race|ethnicity|gender|identity|sexual\s*orientation|hispanic|latino|community|communities|diversity|demographic)\b/i.test(s);
+  
+  // 1. EEO, Demographics, Identity, Communities, Diversity, Disability, Veteran
+  const isDemographic = /\b(disability|disabled|veteran|military|race|ethnicity|gender|identity|pronoun|pronouns|sexual\s*orientation|hispanic|latino|community|communities|diversity|demographic|eeo|equal\s*opportunity|self-identify|self\s*identify)\b/i.test(s);
+  
+  // 2. Legal Signatures, Agreements & Disclosures
+  const isLegalOrSignature = /\b(signature|sign\s*here|legal\s*name|acknowledge|consent|terms|privacy\b|background\s*check|certify|attest|i\s*agree)\b/i.test(s) && !/\b(legal\s*name\s*\(if\s*different\))\b/i.test(s);
+  
+  // 3. Salary & Compensation Expectations
+  const isSalary = /\b(salary|compensation|pay|rate|desired\s*pay|expected\s*pay|hourly\s*rate|remuneration)\b/i.test(s);
+
+  // 4. Security & Passwords
+  const isSecurity = /\b(ssn|social\s*security|password|pin|security\s*code|captcha)\b/i.test(s);
+
+  return isDemographic || isLegalOrSignature || isSalary || isSecurity;
 }
 
 async function analyze() {
@@ -303,14 +316,16 @@ async function analyze() {
 
     const fieldLabelBySelector = new Map(scan.fields.map((f) => [f.selector, f.label || f.ariaLabel || f.placeholder || f.name || '']));
 
-    // Safety Rule: Ethnicity, Identity, Gender, Disability, Veteran & Diversity questions MUST be completed manually by candidate
+    // Strict Manual Candidate Enforcement:
+    // Any field requiring personal choice, legal signature, salary expectation, or demographic identity
+    // MUST be completed manually by the candidate and is marked as 'skip'.
     (resp.fillPlan || []).forEach((instr) => {
       const fieldLabel = fieldLabelBySelector.get(instr.selector) || instr.reasoning || instr.selector;
-      if (isSensitiveDemographicField(fieldLabel)) {
+      if (isCandidateMandatoryManualField(fieldLabel)) {
         instr.value = null;
         instr.fieldType = 'skip';
         instr.confidence = 'low';
-        instr.reasoning = 'Demographic / Identity field: Left for manual candidate completion.';
+        instr.reasoning = 'Candidate-only field: Left for manual candidate completion.';
       }
     });
 
