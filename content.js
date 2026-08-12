@@ -41,8 +41,10 @@ function initCopilot() {
   function selectorFor(el) {
     if (el.id) return `#${CSS.escape(el.id)}`;
     if (el.name) return `[name="${CSS.escape(el.name)}"]`;
-    // Structural fallback: nth-of-type chain from a nearby ancestor with an id,
-    // capped at 4 levels so it doesn't get absurdly long.
+    for (const attr of ['data-automation-id', 'data-testid', 'data-qa', 'data-field', 'data-cy']) {
+      const v = el.getAttribute(attr);
+      if (v) return `[${attr}="${CSS.escape(v)}"]`;
+    }
     const parts = [];
     let node = el;
     for (let i = 0; i < 4 && node && node !== document.body; i++) {
@@ -202,11 +204,16 @@ function initCopilot() {
   }
 
   function setNativeValue(el, value) {
+    try { el.focus(); } catch {}
     const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, 'value');
     if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+    el.dispatchEvent(new Event('focus', { bubbles: true }));
+    el.dispatchEvent(new Event('keydown', { bubbles: true }));
     el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('keyup', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
   function applyOne(instr) {
