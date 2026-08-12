@@ -218,7 +218,7 @@ async function analyze() {
 
     const scanFileFields = scan.fields.filter((f) => f.inputType === 'file');
     const detectedResumeField = scanFileFields.find((f) => /\b(resume|cv)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || scanFileFields[0];
-    const detectedCoverLetterField = scanFileFields.find((f) => /\b(cover\s*letter|letter)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || (scanFileFields.length > 1 ? scanFileFields[1] : undefined);
+    const detectedCoverLetterField = scanFileFields.find((f) => /\b(cover\s*letter|cover|letter)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || (scanFileFields.length > 1 ? scanFileFields[1] : undefined);
 
     const resumeFileSelector = resp.resumeFileSelector || detectedResumeField?.selector;
     const coverLetterFileSelector = resp.coverLetterFileSelector || detectedCoverLetterField?.selector;
@@ -421,7 +421,7 @@ async function attachOrDownload(selector, blob, fileName, mimeType, kindLabel) {
   if (selector) {
     try {
       await attachBlobToField(selector, blob, fileName, mimeType);
-      return { attached: true, message: `Attached ${kindLabel} as "${fileName}".` };
+      return { attached: true, message: `Appropriate ${kindLabel} generated and attached as "${fileName}".` };
     } catch (e) {
       console.warn(`Auto-attach failed for ${kindLabel}, falling back to download:`, e.message);
     }
@@ -429,9 +429,7 @@ async function attachOrDownload(selector, blob, fileName, mimeType, kindLabel) {
   await downloadBlob(blob, fileName);
   return {
     attached: false,
-    message: selector
-      ? `Couldn't auto-attach the ${kindLabel} to the field I found — downloaded "${fileName}" to your Downloads folder instead. Drag it onto the upload field yourself.`
-      : `I couldn't find a ${kindLabel} upload field on this page — downloaded "${fileName}" to your Downloads folder. Drag it onto wherever this form wants it.`,
+    message: `Appropriate ${kindLabel} generated as "${fileName}" — please attach it to the form below.`,
   };
 }
 
