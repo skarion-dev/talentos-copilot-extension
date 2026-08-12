@@ -166,7 +166,7 @@ async function draftAiAnswer(selector, fieldLabel) {
       cleanAnswer = `I am very enthusiastic about applying for the ${tab?.title || 'Position'} role. With my background in technology, engineering, and collaborative problem-solving, I bring hands-on experience driving impactful projects and working effectively with cross-functional teams. I look forward to contributing to your team's success.`;
     }
 
-    await send('applyFillPlan', { instructions: [{ selector, fieldType: 'text', value: cleanAnswer }] });
+    const fillRes = await send('applyFillPlan', { instructions: [{ selector, fieldType: 'text', value: cleanAnswer, confidence: 'high' }] });
 
     const instr = currentPlan?.instructions?.find((i) => i.selector === selector);
     if (instr) {
@@ -176,7 +176,11 @@ async function draftAiAnswer(selector, fieldLabel) {
       instr.reasoning = 'AI-drafted response';
     }
     renderPlanPreview(currentPlan?.instructions);
-    setStatus(`Drafted and filled response for "${fieldLabel}".`, 'success');
+    if (fillRes?.results?.[0]?.applied) {
+      setStatus(`Drafted and filled response into "${fieldLabel}".`, 'success');
+    } else {
+      setStatus(`Drafted response for "${fieldLabel}". Click Fill Form to apply.`, 'success');
+    }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '✨ Auto-Draft Answer'; }
     setStatus(`Could not draft response: ${e.message}`, 'error');
@@ -241,6 +245,11 @@ function isWorkAuthField(label) {
   return isAuth && !isSponsorship;
 }
 
+function isSensitiveDemographicField(label) {
+  const s = String(label || '').toLowerCase();
+  return /\b(disability|disabled|veteran|military|race|ethnicity|gender|sexual\s*orientation|hispanic|latino|community|communities)\b/i.test(s);
+}
+
 async function analyze() {
   const candidateId = $('candidateSelect').value;
   const linkedApplicationId = applicationIdFromTab();
@@ -265,6 +274,25 @@ async function analyze() {
     });
 
     const fieldLabelBySelector = new Map(scan.fields.map((f) => [f.selector, f.label || f.ariaLabel || f.placeholder || f.name || '']));
+
+    // Safety Rule: Never guess sensitive demographic / EEO questions (Disability, Veteran, Ethnicity, Community)
+    (resp.fillPlan || []).forEach((instr) => {
+      const fieldLabel = fieldLabelBySelector.get(instr.selector) || instr.reasoning || instr.selector;
+      if (isSensitiveDemographicField(fieldLabel)) {
+        if (instr.fieldType === 'checkbox') {
+          if (!/\b(none|prefer\s*not|decline)\b/i.test(fieldLabel)) {
+            instr.value = false;
+            instr.fieldType = 'skip';
+            instr.confidence = 'low';
+            instr.reasoning = 'Sensitive demographic question: Defaulted to unchecked for candidate safety.';
+          }
+        } else if (instr.fieldType === 'radio' || instr.fieldType === 'select') {
+          instr.value = 'I prefer not to answer';
+          instr.confidence = 'low';
+          instr.reasoning = 'Sensitive demographic question: Defaulted to prefer not to answer.';
+        }
+      }
+    });
 
     // Candidate Rule Override: US Work Authorization always defaults to "Yes" / High Confidence
     (resp.fillPlan || []).forEach((instr) => {

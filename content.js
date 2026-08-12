@@ -229,12 +229,18 @@ function initCopilot() {
 
   function setNativeValue(el, value) {
     try { el.focus(); } catch {}
-    const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    const isTextarea = el.tagName.toUpperCase() === 'TEXTAREA';
+    const proto = isTextarea ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, 'value');
     if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+
     el.dispatchEvent(new Event('focus', { bubbles: true }));
     el.dispatchEvent(new Event('keydown', { bubbles: true }));
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    try {
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+    } catch {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     el.dispatchEvent(new Event('keyup', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     el.dispatchEvent(new Event('blur', { bubbles: true }));
