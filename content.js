@@ -39,24 +39,48 @@ function initCopilot() {
   // (for applyFillPlan / captureCurrentValues), preferring stable attributes
   // over structural position.
   function selectorFor(el) {
-    if (el.id) return `#${CSS.escape(el.id)}`;
-    if (el.name) return `[name="${CSS.escape(el.name)}"]`;
+    if (el.id) {
+      const sel = `#${CSS.escape(el.id)}`;
+      try { if (document.querySelectorAll(sel).length === 1) return sel; } catch {}
+    }
+    if (el.name && el.type !== 'radio') {
+      const sel = `[name="${CSS.escape(el.name)}"]`;
+      try { if (document.querySelectorAll(sel).length === 1) return sel; } catch {}
+    }
+    if (el.name && el.type === 'radio') {
+      return `input[type="radio"][name="${CSS.escape(el.name)}"]`;
+    }
     for (const attr of ['data-automation-id', 'data-testid', 'data-qa', 'data-field', 'data-cy']) {
       const v = el.getAttribute(attr);
-      if (v) return `[${attr}="${CSS.escape(v)}"]`;
+      if (v) {
+        const sel = `[${attr}="${CSS.escape(v)}"]`;
+        try { if (document.querySelectorAll(sel).length === 1) return sel; } catch {}
+      }
     }
-    const parts = [];
-    let node = el;
-    for (let i = 0; i < 4 && node && node !== document.body; i++) {
-      if (node.id) { parts.unshift(`#${CSS.escape(node.id)}`); break; }
-      const parent = node.parentElement;
-      if (!parent) break;
-      const siblings = [...parent.children].filter((c) => c.tagName === node.tagName);
-      const idx = siblings.indexOf(node) + 1;
-      parts.unshift(`${node.tagName.toLowerCase()}:nth-of-type(${idx})`);
-      node = parent;
+
+    const pathParts = [];
+    let curr = el;
+    while (curr && curr !== document.body && curr !== document.documentElement) {
+      if (curr.id) {
+        const parentSel = `#${CSS.escape(curr.id)}`;
+        try {
+          if (document.querySelectorAll(parentSel).length === 1) {
+            pathParts.unshift(parentSel);
+            break;
+          }
+        } catch {}
+      }
+      const parent = curr.parentElement;
+      if (!parent) {
+        pathParts.unshift(curr.tagName.toLowerCase());
+        break;
+      }
+      const siblings = [...parent.children].filter((c) => c.tagName === curr.tagName);
+      const idx = siblings.indexOf(curr) + 1;
+      pathParts.unshift(`${curr.tagName.toLowerCase()}:nth-of-type(${idx})`);
+      curr = parent;
     }
-    return parts.join(' > ');
+    return pathParts.join(' > ');
   }
 
   function labelFor(el) {
