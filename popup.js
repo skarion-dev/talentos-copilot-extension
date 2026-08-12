@@ -440,6 +440,7 @@ async function analyze() {
       applicationId: resp.applicationId, candidateId: resp.candidateId || candidateId, domain, instructions: resp.fillPlan, fieldLabelBySelector,
       coverLetterFileSelector, coverLetterTextSelector: resp.coverLetterTextSelector,
       resumeFileSelector, matchedApplication: resp.matchedApplication || null,
+      captureOnly: Boolean(resp.captureOnly),
     };
     renderPlanPreview(resp.fillPlan);
     $('fillBtn').disabled = false;
@@ -452,7 +453,10 @@ async function analyze() {
       setStatus(`Matched existing application: ${resp.matchedApplication.title} @ ${resp.matchedApplication.company}. Using its tailored resume — ${resp.fillPlan.length} fields. Review, then Fill.`, 'success');
     } else {
       resumeSelectEl.disabled = false;
-      setStatus(`Plan ready — ${resp.fillPlan.length} fields. Review, then Fill.`, 'success');
+      const captureNote = resp.captureOnly
+        ? ' No TalentOS application was created; this page is being assisted in capture-only mode.'
+        : '';
+      setStatus(`Plan ready — ${resp.fillPlan.length} fields. Review, then Fill.${captureNote}`, 'success');
     }
   } catch (e) { setStatus(e.message, 'error'); }
 }
