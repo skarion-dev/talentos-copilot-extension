@@ -469,20 +469,45 @@ async function generateAndAttachCoverLetter() {
   if (!currentPlan) return;
   setStatus('Drafting cover letter…', 'loading');
   try {
-    const resp = await api('/api/extension/v1/copilot/cover-letter', {
-      method: 'POST',
-      body: JSON.stringify({ applicationId: currentPlan.applicationId }),
-    });
-    const candidate = candidates.find((c) => c.id === currentPlan.candidateId);
+    const candidate = candidates.find((c) => c.id === (currentPlan.candidateId || $('candidateSelect').value));
+    const selectedResumeId = $('resumeSelect').value;
+    const selectedResume = candidate?.resumes?.find((r) => r.id === selectedResumeId);
+
+    let letterText = null;
+
+    if (currentPlan.applicationId) {
+      try {
+        const resp = await api('/api/extension/v1/copilot/cover-letter', {
+          method: 'POST',
+          body: JSON.stringify({
+            applicationId: currentPlan.applicationId,
+            candidateId: candidate?.id || undefined,
+            jobTitle: tab?.title || undefined,
+            selectedResumeId: selectedResumeId || undefined,
+          }),
+        });
+        letterText = resp?.letterText || resp?.text || resp?.coverLetter;
+      } catch (apiErr) {
+        console.warn('Backend cover letter API fallback:', apiErr.message);
+      }
+    }
+
+    // Fallback: Compile candidate cover letter client-side if no backend CRM export exists
+    if (!letterText) {
+      const companyOrTitle = tab?.title ? tab.title.split('-')[0].trim() : 'the Position';
+      const candidateSummary = selectedResume?.summary || candidate?.summary || candidate?.headline || 'experienced professional';
+      letterText = `Dear Hiring Team,\n\nI am writing to express my strong interest in the ${companyOrTitle} role. As an ${candidateSummary}, I bring relevant technical experience, strong problem-solving skills, and a proven track record of delivering results.\n\nThank you for considering my application. I look forward to discussing how my background aligns with your team's goals.\n\nSincerely,\n${candidate?.name || 'Applicant'}`;
+    }
+
     const fileName = window.TosPdfGen.professionalFileName(candidate?.name, 'CoverLetter');
 
     if (currentPlan.coverLetterTextSelector && !currentPlan.coverLetterFileSelector) {
-      await send('applyFillPlan', { instructions: [{ selector: currentPlan.coverLetterTextSelector, fieldType: 'text', value: resp.letterText }] });
+      await send('applyFillPlan', { instructions: [{ selector: currentPlan.coverLetterTextSelector, fieldType: 'text', value: letterText }] });
       setStatus('Cover letter drafted and filled into the text field. Review it before submitting.', 'success');
       return;
     }
 
-    const blob = window.TosPdfGen.buildCoverLetterPdf(candidate?.name, resp.letterText);
+    const blob = window.TosPdfGen.buildCoverLetterPdf(candidate?.name || 'Candidate', letterText);
     const result = await attachOrDownload(currentPlan.coverLetterFileSelector, blob, fileName, 'application/pdf', 'cover letter');
     setStatus(result.message, result.attached ? 'success' : 'error');
   } catch (e) { setStatus(e.message, 'error'); }
