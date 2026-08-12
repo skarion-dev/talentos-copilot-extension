@@ -216,27 +216,27 @@ async function analyze() {
       }
     });
 
+    const scanFileFields = scan.fields.filter((f) => f.inputType === 'file');
+    const detectedResumeField = scanFileFields.find((f) => /\b(resume|cv)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || scanFileFields[0];
+    const detectedCoverLetterField = scanFileFields.find((f) => /\b(cover\s*letter|letter)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || (scanFileFields.length > 1 ? scanFileFields[1] : undefined);
+
+    const resumeFileSelector = resp.resumeFileSelector || detectedResumeField?.selector;
+    const coverLetterFileSelector = resp.coverLetterFileSelector || detectedCoverLetterField?.selector;
+
     if (resp.candidateId && candidates.some((c) => c.id === resp.candidateId)) {
       $('candidateSelect').value = resp.candidateId;
       renderResumes();
     }
     currentPlan = {
       applicationId: resp.applicationId, candidateId: resp.candidateId || candidateId, domain, instructions: resp.fillPlan, fieldLabelBySelector,
-      coverLetterFileSelector: resp.coverLetterFileSelector, coverLetterTextSelector: resp.coverLetterTextSelector,
-      resumeFileSelector: resp.resumeFileSelector, matchedApplication: resp.matchedApplication || null,
+      coverLetterFileSelector, coverLetterTextSelector: resp.coverLetterTextSelector,
+      resumeFileSelector, matchedApplication: resp.matchedApplication || null,
     };
     renderPlanPreview(resp.fillPlan);
     $('fillBtn').disabled = false;
     $('saveBtn').disabled = true;
-    // Buttons are always enabled once a plan exists — detection informs how
-    // the click behaves (auto-attach vs. download-and-tell-the-AE), it
-    // doesn't gate whether the AE can try. Detection can miss a field the
-    // form genuinely has.
     $('resumeFileBtn').disabled = false;
     $('coverLetterBtn').disabled = false;
-    // When TalentOS already recognizes this exact job, it uses the ONE
-    // resume tailored for it — the manual dropdown pick is ignored server
-    // side in that case, so disable it here to avoid a misleading no-op.
     const resumeSelectEl = $('resumeSelect');
     if (resp.matchedApplication) {
       resumeSelectEl.disabled = true;
@@ -390,6 +390,28 @@ function downloadBlob(blob, fileName) {
       else resolve(downloadId);
     });
   });
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      const base64 = dataUrl.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function attachBlobToField(selector, blob, fileName, mimeType) {
+  const base64 = await blobToBase64(blob);
+  const res = await send('attachFile', { selector, base64, fileName, mimeType });
+  if (!res?.applied) {
+    throw new Error(res?.reason || 'File input element not found');
+  }
+  return res;
 }
 
 // Tries to attach directly to a detected field; if that selector is missing,
