@@ -11,7 +11,7 @@
 
 ## Overview
 
-This repository contains the Chrome Extension for **TalentOS Application Copilot**. It helps job candidates scan, analyze, and fill out job application forms across major Applicant Tracking Systems (ATS) including **Lever**, **Ashby**, **Greenhouse**, **Workday**, **SmartRecruiters**, and **Zoho Recruit**.
+This repository contains the Chrome Extension for **TalentOS Application Copilot**. It helps job candidates scan, analyze, and fill out job application forms across major Applicant Tracking Systems (ATS) including **Lever**, **Ashby**, **Greenhouse**, **Workday**, **SmartRecruiters**, **Zoho Recruit**, **Workable**, and **BambooHR**.
 
 The experience is built around multi-frame DOM scanning, AI-powered field reasoning, automated candidate preference rules (e.g. US Work Authorization defaults), fail-safe PDF resume generation, context-aware Copilot Chat, and token-optimized API integration.
 

@@ -4,6 +4,7 @@ const path = require('path');
 const fixtures = [
   'greenhouse.html', 'lever.html', 'workday.html',
   'ashby.html', 'smartrecruiters.html', 'zoho.html',
+  'workable.html', 'bamboohr.html',
 ];
 
 async function setupMockChrome(page) {
