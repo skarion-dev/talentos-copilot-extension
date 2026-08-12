@@ -141,7 +141,7 @@ async function loadCandidates() {
 }
 
 async function draftAiAnswer(selector, fieldLabel) {
-  const btn = document.querySelector(`button[data-draft-selector="${selector}"]`);
+  const btn = document.querySelector(`button[data-draft-selector="${CSS.escape(selector)}"]`);
   if (btn) { btn.disabled = true; btn.textContent = '✨ Drafting…'; }
   setStatus(`Drafting response for "${fieldLabel}"…`, 'loading');
 
@@ -186,7 +186,6 @@ async function draftAiAnswer(selector, fieldLabel) {
     setStatus(`Could not draft response: ${e.message}`, 'error');
   }
 }
-window.__tosDraftAnswer = draftAiAnswer;
 
 function renderPlanPreview(instructions) {
   if (!instructions || !instructions.length) {
@@ -222,7 +221,7 @@ function renderPlanPreview(instructions) {
     const valStr = typeof i.value === 'boolean' ? (i.value ? 'Yes / Checked' : 'No / Unchecked') : String(i.value || '—');
     const isDraftable = i.fieldType === 'ai_answer' || i.fieldType === 'skip' || (i.confidence === 'low' && !i.value);
     const draftBtnHtml = isDraftable
-      ? `<button class="btnDraft" data-draft-selector="${escapeHtml(i.selector)}" onclick="window.__tosDraftAnswer('${escapeHtml(i.selector)}', '${escapeHtml(labelStr.replace(/'/g, "\\'"))}')">✨ Auto-Draft Answer</button>`
+      ? `<button class="btnDraft" data-draft-selector="${escapeHtml(i.selector)}" data-label="${escapeHtml(labelStr)}">✨ Auto-Draft Answer</button>`
       : '';
 
     return `<div class="planRow ${i.confidence === 'low' ? 'low' : ''}">
@@ -236,6 +235,15 @@ function renderPlanPreview(instructions) {
   }).join('');
 
   $('planPreview').innerHTML = headerHtml + rows;
+
+  document.querySelectorAll('#planPreview .btnDraft').forEach((btn) => {
+    btn.addEventListener('click', async (evt) => {
+      evt.preventDefault();
+      const selector = btn.getAttribute('data-draft-selector');
+      const label = btn.getAttribute('data-label');
+      if (selector) await draftAiAnswer(selector, label);
+    });
+  });
 }
 
 function isWorkAuthField(label) {
