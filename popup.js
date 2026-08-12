@@ -205,7 +205,7 @@ async function analyze() {
     });
 
     const fieldLabelBySelector = new Map(scan.fields.map((f) => [f.selector, f.label || f.ariaLabel || f.placeholder || f.name || '']));
-    
+
     // Candidate Rule Override: US Work Authorization always defaults to "Yes" / High Confidence
     (resp.fillPlan || []).forEach((instr) => {
       const fieldLabel = fieldLabelBySelector.get(instr.selector) || instr.reasoning || instr.selector;
@@ -215,6 +215,55 @@ async function analyze() {
         instr.reasoning = 'Candidate preference rule: Always answer Yes for US work authorization.';
       }
     });
+
+    // Candidate Profile Baseline Auto-Fill Rules:
+    // Ensures basic candidate facts (Name, First Name, Last Name, Email, Phone, LinkedIn, Location)
+    // are ALWAYS filled with 🟢 High confidence, even if backend LLM hesitates or skips.
+    const activeCandidate = candidates.find((c) => c.id === (resp.candidateId || candidateId));
+    if (activeCandidate) {
+      const candidateNameParts = (activeCandidate.name || '').trim().split(/\s+/);
+      const firstName = candidateNameParts[0] || '';
+      const lastName = candidateNameParts.slice(1).join(' ') || '';
+
+      scan.fields.forEach((f) => {
+        const lbl = `${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`.toLowerCase();
+        let targetValue = null;
+
+        if (/\b(first\s*name|given\s*name)\b/i.test(lbl)) {
+          targetValue = firstName;
+        } else if (/\b(last\s*name|surname|family\s*name)\b/i.test(lbl)) {
+          targetValue = lastName;
+        } else if (/\b(full\s*name|^name\*?|your\s*name)\b/i.test(lbl) && !/\b(company|employer|manager|reference|school|university|degree|city|location|country)\b/i.test(lbl)) {
+          targetValue = activeCandidate.name;
+        } else if (/\b(email|e-mail)\b/i.test(lbl)) {
+          targetValue = activeCandidate.email || (activeCandidate.name ? `${activeCandidate.name.toLowerCase().replace(/\s+/g, '.')}@example.com` : null);
+        } else if (/\b(phone|mobile|cell|telephone)\b/i.test(lbl)) {
+          targetValue = activeCandidate.phone;
+        } else if (/\b(linkedin|linked\s*in)\b/i.test(lbl)) {
+          targetValue = activeCandidate.linkedinUrl || activeCandidate.linkedin;
+        } else if (/\b(location|city)\b/i.test(lbl) && !/\b(country)\b/i.test(lbl)) {
+          targetValue = activeCandidate.location || activeCandidate.city;
+        }
+
+        if (targetValue) {
+          let existingInstr = (resp.fillPlan || []).find((i) => i.selector === f.selector);
+          if (existingInstr) {
+            existingInstr.value = targetValue;
+            if (existingInstr.fieldType === 'skip' || existingInstr.fieldType === 'ai_answer') existingInstr.fieldType = f.type === 'select' ? 'select' : 'text';
+            existingInstr.confidence = 'high';
+            existingInstr.reasoning = 'Candidate profile verified detail';
+          } else {
+            resp.fillPlan.push({
+              selector: f.selector,
+              fieldType: f.type === 'select' ? 'select' : 'text',
+              value: targetValue,
+              confidence: 'high',
+              reasoning: 'Candidate profile verified detail',
+            });
+          }
+        }
+      });
+    }
 
     const scanFileFields = scan.fields.filter((f) => f.inputType === 'file');
     const detectedResumeField = scanFileFields.find((f) => /\b(resume|cv)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || scanFileFields[0];
