@@ -55,21 +55,27 @@
   .header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color);
+    justify-content: center;
+    text-align: center;
+    margin-bottom: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
   }
 
   h1 {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
-    margin: 0;
+    margin: 0 auto;
     color: var(--text-main);
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     letter-spacing: -0.3px;
+    text-align: center;
   }
 
   h1::before {
@@ -79,16 +85,17 @@
     height: 10px;
     border-radius: 50%;
     background: var(--primary);
-    box-shadow: 0 0 10px rgba(124, 58, 237, 0.6);
+    box-shadow: 0 0 10px rgba(124, 58, 237, 0.7);
   }
 
   .meta {
     font-size: 11px;
     color: var(--text-muted);
-    margin: 4px 0 12px;
+    margin: 8px auto 14px;
     word-break: break-word;
     font-weight: 500;
     line-height: 1.4;
+    text-align: center;
   }
 
   .tabs {

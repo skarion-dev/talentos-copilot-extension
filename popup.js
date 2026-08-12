@@ -144,15 +144,22 @@ function generateTailoredFallbackAnswer(fieldLabel, candidateName, jobTitle) {
   const lbl = String(fieldLabel || '').toLowerCase();
   const title = jobTitle ? jobTitle.split('-')[0].trim() : 'this position';
 
-  if (/\b(improvement|improve|process|workflow|operational|efficiency)\b/i.test(lbl)) {
-    return `In my previous role, I led a major operational improvement initiative by analyzing ticket escalation queues and workflow bottlenecks. We identified recurring friction points in regional cross-team handoffs and implemented standardized resolution SLAs.\n\nAs a result of these process changes, team response times improved by 35%, escalation resolution rates increased, and customer satisfaction scores rose consistently across regional accounts.`;
+  // 1. Regional / Global Support Adaptation (Match region / apac / global / adapted FIRST)
+  if (/\b(region|regional|apac|emea|latam|global|adapted|specify\s*region)\b/i.test(lbl)) {
+    return `When adapting support processes for regional teams across APAC and global territories, I prioritized balancing central governance standards with regional language and timezone requirements. I facilitated cross-functional alignment sessions to establish clear escalation matrices and follow-the-sun coverage models.\n\nThis approach ensured seamless regional coverage, reduced resolution latency for global customers, and fostered strong collaboration between localized support pods and central engineering teams.`;
   }
-  if (/\b(mistake|hiring|team|lesson|learned|building)\b/i.test(lbl)) {
+
+  // 2. Operational Improvement / Process Efficiency
+  if (/\b(improvement|operational|efficiency|bottleneck|workflow|sla)\b/i.test(lbl)) {
+    return `In my previous role, I led a major operational improvement initiative by analyzing ticket escalation queues and workflow bottlenecks. We identified recurring friction points in cross-team handoffs and implemented standardized resolution SLAs.\n\nAs a result of these process changes, team response times improved by 35%, escalation resolution rates increased, and customer satisfaction scores rose consistently across accounts.`;
+  }
+
+  // 3. Hiring Mistake / Team Leadership Lessons
+  if (/\b(mistake|hiring|team|lesson|learned|building|hire)\b/i.test(lbl)) {
     return `Early in my leadership journey, I made the mistake of focusing heavily on technical competence during hiring while underestimating cultural and communication alignment. Shortly after onboarding, alignment gaps emerged within cross-functional project deliverables.\n\nI resolved this by establishing clear weekly 1-on-1 mentorship sessions, introducing transparent objective key results (OKRs), and refining our hiring rubric to evaluate adaptability, collaboration, and communication alongside technical skills.`;
   }
-  if (/\b(region|regional|global|support|adapted)\b/i.test(lbl)) {
-    return `When adapting support processes for regional operations, I prioritized balancing central governance standards with regional language and timezone requirements. I facilitated cross-functional alignment sessions to establish clear escalation matrices and follow-the-sun coverage models.\n\nThis approach ensured seamless regional coverage, reduced resolution latency for APAC and global customers, and fostered strong collaboration between localized support pods and global engineering teams.`;
-  }
+
+  // 4. Why Apply / Interest in Role
   if (/\b(why|interest|apply|join|company|role|position)\b/i.test(lbl)) {
     return `I am deeply interested in joining as a ${title}. Throughout my career, I have focused on solving complex technical challenges, optimizing operational processes, and delivering exceptional experiences for customers and teams.\n\nThis opportunity aligns strongly with my background in scaling support operations and technical problem-solving. I am excited to bring my experience, leadership, and passion for excellence to your team.`;
   }
@@ -162,7 +169,7 @@ function generateTailoredFallbackAnswer(fieldLabel, candidateName, jobTitle) {
 
 async function draftAiAnswer(selector, fieldLabel) {
   const btn = document.querySelector(`button[data-draft-selector="${CSS.escape(selector)}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = '✨ Drafting…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Drafting…'; }
   setStatus(`Drafting response for "${fieldLabel}"…`, 'loading');
 
   try {
@@ -202,9 +209,20 @@ async function draftAiAnswer(selector, fieldLabel) {
       setStatus(`Drafted response for "${fieldLabel}". Click Fill Form to apply.`, 'success');
     }
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '✨ Auto-Draft Answer'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Auto-Draft Answer'; }
     setStatus(`Could not draft response: ${e.message}`, 'error');
   }
+}
+
+function isEssayQuestionField(label, fieldType) {
+  if (fieldType === 'ai_answer') return true;
+  const s = String(label || '').toLowerCase();
+
+  // Exclude demographic / personal facts (Age, Gender, Ethnicity, Disability, Veteran, Passwords, Signatures)
+  if (isCandidateMandatoryManualField(label)) return false;
+
+  // Include open-ended essay prompt keywords ("describe", "tell us", "explain", "why", "share", "how did you", "what made you", "outline")
+  return /\b(describe|tell\s*us|explain|why\b|share\s*an?\b|give\s*an?\b|how\s*did\s*you|what\s*made\s*you|what\s*steps|outline|essay|background)\b/i.test(s);
 }
 
 function renderPlanPreview(instructions) {
@@ -219,29 +237,29 @@ function renderPlanPreview(instructions) {
 
   const headerHtml = `<div class="planHeader">
     <span>Matched ${instructions.length} Field(s)</span>
-    <span>🟢 ${high} • 🟡 ${med} • 🔴 ${low}</span>
+    <span>High: ${high} • Medium: ${med} • Low: ${low}</span>
   </div>`;
 
   const rows = instructions.map((i) => {
     let badgeClass = 'high';
-    let badgeText = '🟢 High';
+    let badgeText = 'High';
     if (i.fieldType === 'skip') {
-      badgeClass = 'skip'; badgeText = '⏩ Skip';
+      badgeClass = 'skip'; badgeText = 'Skip';
     } else if (i.fieldType === 'file') {
-      badgeClass = 'file'; badgeText = '📁 File';
+      badgeClass = 'file'; badgeText = 'File';
     } else if (i.fieldType === 'ai_answer') {
-      badgeClass = 'ai_answer'; badgeText = '📝 Write-up';
+      badgeClass = 'ai_answer'; badgeText = 'Write-up';
     } else if (i.confidence === 'medium') {
-      badgeClass = 'medium'; badgeText = '🟡 Review';
+      badgeClass = 'medium'; badgeText = 'Review';
     } else if (i.confidence === 'low') {
-      badgeClass = 'low'; badgeText = '🔴 Low';
+      badgeClass = 'low'; badgeText = 'Low';
     }
 
     const labelStr = currentPlan?.fieldLabelBySelector?.get(i.selector) || i.reasoning || i.selector;
     const valStr = typeof i.value === 'boolean' ? (i.value ? 'Yes / Checked' : 'No / Unchecked') : String(i.value || '—');
-    const isDraftable = i.fieldType === 'ai_answer' || i.fieldType === 'skip' || (i.confidence === 'low' && !i.value);
+    const isDraftable = isEssayQuestionField(labelStr, i.fieldType);
     const draftBtnHtml = isDraftable
-      ? `<button class="btnDraft" data-draft-selector="${escapeHtml(i.selector)}" data-label="${escapeHtml(labelStr)}">✨ Auto-Draft Answer</button>`
+      ? `<button class="btnDraft" data-draft-selector="${escapeHtml(i.selector)}" data-label="${escapeHtml(labelStr)}">Auto-Draft Answer</button>`
       : '';
 
     return `<div class="planRow ${i.confidence === 'low' ? 'low' : ''}">
@@ -471,9 +489,9 @@ async function fill() {
     if (audit?.missing?.length > 0) {
       const missingLabels = audit.missing.map((m) => `"${m.label}"`).slice(0, 3).join(', ');
       const totalCount = audit.missing.length;
-      setStatus(`Filled ${applied} field(s) & attached Resume PDF. ⚠️ ${totalCount} missing field(s) left for manual review: ${missingLabels}.`, 'warning');
+      setStatus(`Filled ${applied} field(s) & attached Resume PDF. ${totalCount} missing field(s) left for manual review: ${missingLabels}.`, 'warning');
     } else {
-      setStatus(`Filled ${applied} field(s) & attached Resume PDF cleanly! Review the form before submitting.`, 'success');
+      setStatus(`Filled ${applied} field(s) & attached Resume PDF cleanly. Review the form before submitting.`, 'success');
     }
     $('saveBtn').disabled = false;
   } catch (e) { setStatus(e.message, 'error'); }
