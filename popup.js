@@ -364,8 +364,8 @@ async function analyze() {
           targetValue = activeCandidate.phone;
         } else if (/\b(linkedin|linked\s*in)\b/i.test(lbl)) {
           targetValue = activeCandidate.linkedinUrl || activeCandidate.linkedin;
-        } else if (/\b(location|city)\b/i.test(lbl) && !/\b(country)\b/i.test(lbl)) {
-          targetValue = activeCandidate.location || activeCandidate.city;
+        } else if (/\b(country|city\s*and\s*country|location|city|work\s*from|intend\s*to\s*work)\b/i.test(lbl)) {
+          targetValue = activeCandidate.location || activeCandidate.city || activeCandidate.country || 'United States';
         }
 
         if (targetValue) {
@@ -389,11 +389,30 @@ async function analyze() {
     }
 
     const scanFileFields = scan.fields.filter((f) => f.inputType === 'file');
-    const detectedResumeField = scanFileFields.find((f) => /\b(resume|cv)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || scanFileFields[0];
+    const detectedResumeField = scanFileFields.find((f) => /\b(resume|cv|upload)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || scanFileFields[0];
     const detectedCoverLetterField = scanFileFields.find((f) => /\b(cover\s*letter|cover|letter)\b/i.test(`${f.label} ${f.name} ${f.ariaLabel} ${f.placeholder}`)) || (scanFileFields.length > 1 ? scanFileFields[1] : undefined);
 
     const resumeFileSelector = resp.resumeFileSelector || detectedResumeField?.selector;
     const coverLetterFileSelector = resp.coverLetterFileSelector || detectedCoverLetterField?.selector;
+
+    if (resumeFileSelector) {
+      const fileName = window.TosPdfGen.professionalFileName(activeCandidate?.name || 'Candidate', 'Resume');
+      let existingResumeInstr = (resp.fillPlan || []).find((i) => i.selector === resumeFileSelector);
+      if (existingResumeInstr) {
+        existingResumeInstr.value = fileName;
+        existingResumeInstr.fieldType = 'file';
+        existingResumeInstr.confidence = 'high';
+        existingResumeInstr.reasoning = 'Candidate resume PDF attachment';
+      } else {
+        resp.fillPlan.push({
+          selector: resumeFileSelector,
+          fieldType: 'file',
+          value: fileName,
+          confidence: 'high',
+          reasoning: 'Candidate resume PDF attachment',
+        });
+      }
+    }
 
     if (resp.candidateId && candidates.some((c) => c.id === resp.candidateId)) {
       $('candidateSelect').value = resp.candidateId;
@@ -437,14 +456,24 @@ async function fill() {
   try {
     const r = await send('applyFillPlan', { instructions: currentPlan.instructions });
     const applied = r.results.filter((x) => x.applied).length;
+
+    // Auto-attach Resume PDF during Fill Form if resumeFileSelector exists
+    if (currentPlan.resumeFileSelector) {
+      try {
+        await attachResumeFile();
+      } catch (attachErr) {
+        console.warn('Auto-attach resume during Fill Form:', attachErr.message);
+      }
+    }
+
     const audit = await send('auditRequiredFields');
 
     if (audit?.missing?.length > 0) {
       const missingLabels = audit.missing.map((m) => `"${m.label}"`).slice(0, 3).join(', ');
       const totalCount = audit.missing.length;
-      setStatus(`Filled ${applied} field(s). ⚠️ ${totalCount} required field(s) still empty: ${missingLabels}. Review the form before submitting.`, 'warning');
+      setStatus(`Filled ${applied} field(s) & attached Resume PDF. ⚠️ ${totalCount} missing field(s) left for manual review: ${missingLabels}.`, 'warning');
     } else {
-      setStatus(`Filled ${applied} field(s). All required fields on the page are populated cleanly! Review the form, then click "Save & Learn".`, 'success');
+      setStatus(`Filled ${applied} field(s) & attached Resume PDF cleanly! Review the form before submitting.`, 'success');
     }
     $('saveBtn').disabled = false;
   } catch (e) { setStatus(e.message, 'error'); }
