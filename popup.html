@@ -43,7 +43,7 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 13px;
     margin: 0;
-    padding: 16px;
+    padding: 12px;
     width: 100%;
     max-width: 100%;
     min-width: 320px;
@@ -52,65 +52,105 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* ── Compact header ── */
   .header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    text-align: center;
-    margin-bottom: 10px;
-    padding: 10px 14px;
+    justify-content: space-between;
+    padding: 8px 12px;
     background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+    margin-bottom: 8px;
   }
 
   h1 {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
-    margin: 0 auto;
+    margin: 0;
     color: var(--text-main);
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    gap: 7px;
     letter-spacing: -0.3px;
-    text-align: center;
   }
 
   h1::before {
     content: '';
     display: inline-block;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--primary);
-    box-shadow: 0 0 10px rgba(124, 58, 237, 0.7);
+    box-shadow: 0 0 8px rgba(124, 58, 237, 0.7);
   }
 
   .meta {
     font-size: 11px;
     color: var(--text-muted);
-    margin: 8px auto 14px;
-    word-break: break-word;
     font-weight: 500;
     line-height: 1.4;
     text-align: center;
+    word-break: break-word;
+    margin: 6px 0 10px;
   }
 
+  /* ── Context card ── */
+  .ctx-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    padding: 8px 11px;
+    margin-bottom: 9px;
+    font-size: 11px;
+  }
+
+  .ctx-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 0;
+  }
+
+  .ctx-label {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+
+  .ctx-val {
+    color: var(--text-main);
+    font-weight: 500;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+  }
+
+  .ctx-linked   { color: var(--success-text); font-weight: 600; }
+  .ctx-unlinked { color: var(--text-muted); }
+
+  /* ── Tabs ── */
   .tabs {
     display: flex;
     background: #e2e8f0;
     padding: 3px;
     border-radius: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
+    gap: 2px;
   }
 
   .tab {
     flex: 1;
-    padding: 7px 12px;
+    padding: 6px 8px;
     text-align: center;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     border-radius: 8px;
     cursor: pointer;
@@ -127,9 +167,8 @@
   .tabPanel { display: none; }
   .tabPanel.active { display: block; }
 
-  .form-group {
-    margin-bottom: 12px;
-  }
+  /* ── Form controls ── */
+  .form-group { margin-bottom: 10px; }
 
   label {
     display: block;
@@ -138,12 +177,12 @@
     color: #475569;
     text-transform: uppercase;
     letter-spacing: 0.6px;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
   }
 
-  select, input {
+  select, input[type="text"], input[type="password"] {
     width: 100%;
-    padding: 9px 12px;
+    padding: 8px 11px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
@@ -160,16 +199,17 @@
     box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
   }
 
+  /* ── Button groups ── */
   .btn-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-top: 14px;
+    gap: 6px;
+    margin-top: 10px;
   }
 
   button {
     width: 100%;
-    padding: 10px 16px;
+    padding: 9px 14px;
     border: 0;
     border-radius: 9px;
     background: var(--primary-gradient);
@@ -182,7 +222,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 7px;
     box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
   }
 
@@ -202,6 +242,7 @@
     color: #94a3b8;
     cursor: not-allowed;
     box-shadow: none;
+    transform: none;
   }
 
   button.secondary {
@@ -218,72 +259,37 @@
     box-shadow: 0 3px 8px rgba(15, 23, 42, 0.08);
   }
 
+  /* Secondary actions section — hidden until plan is ready */
+  #secondaryActions {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  /* ── Status bar ── */
   .status {
     font-size: 12px;
-    margin-top: 12px;
-    padding: 10px 14px;
+    margin-top: 10px;
+    padding: 9px 12px;
     border-radius: 9px;
-    min-height: 38px;
+    min-height: 36px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     line-height: 1.45;
     transition: all 0.2s ease;
   }
 
-  .status.error {
-    background: var(--error-bg);
-    color: var(--error-text);
-    border: 1px solid var(--error-border);
-  }
+  .status.error   { background: var(--error-bg);   color: var(--error-text);   border: 1px solid var(--error-border); }
+  .status.success { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+  .status.warning { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); }
+  .status.loading { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
 
-  .status.success {
-    background: var(--success-bg);
-    color: var(--success-text);
-    border: 1px solid var(--success-border);
-  }
-
-  .status.warning {
-    background: var(--warning-bg);
-    color: var(--warning-text);
-    border: 1px solid var(--warning-border);
-  }
-
-  .status.loading {
-    background: #f1f5f9;
-    color: #334155;
-    border: 1px solid #e2e8f0;
-  }
-
-  .btnDraft {
-    margin-top: 6px;
-    padding: 5px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--primary-dark);
-    background: #f3e8ff;
-    border: 1px solid #d8b4fe;
-    border-radius: 7px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    box-shadow: 0 1px 2px rgba(124, 58, 237, 0.08);
-  }
-
-  .btnDraft:hover {
-    background: #e9d5ff;
-    border-color: var(--primary);
-    transform: translateY(-1px);
-  }
-
-  .btnDraft:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-  }
-
+  /* ── Spinner ── */
   .spinner {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
     border: 2px solid #cbd5e1;
     border-top-color: var(--primary);
     border-radius: 50%;
@@ -291,14 +297,13 @@
     flex-shrink: 0;
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── Plan preview ── */
   #planPreview {
-    max-height: 240px;
+    max-height: 230px;
     overflow-y: auto;
-    margin-top: 12px;
+    margin-top: 10px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
     background: var(--card-bg);
@@ -306,7 +311,7 @@
   }
 
   .planHeader {
-    padding: 9px 12px;
+    padding: 8px 11px;
     background: #f1f5f9;
     border-bottom: 1px solid var(--border-color);
     font-size: 11px;
@@ -315,10 +320,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   .planRow {
-    padding: 9px 12px;
+    padding: 8px 11px;
     border-bottom: 1px solid #f1f5f9;
     font-size: 11px;
     display: flex;
@@ -343,7 +351,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 220px;
+    max-width: 210px;
   }
 
   .planVal {
@@ -352,6 +360,36 @@
     word-break: break-all;
   }
 
+  /* Per-field approval checkbox */
+  .approveLabel {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    margin-top: 2px;
+  }
+
+  .approveCheck {
+    width: auto;
+    padding: 0;
+    box-shadow: none;
+    border: none;
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+
+  /* Skip / file note */
+  .skipNote {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 2px;
+  }
+
+  /* ── Badges ── */
   .badge {
     font-weight: 600;
     font-size: 10px;
@@ -360,67 +398,144 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  .badge.high { background: var(--badge-high-bg); color: var(--badge-high-fg); }
-  .badge.medium { background: var(--badge-med-bg); color: var(--badge-med-fg); }
-  .badge.low { background: var(--badge-low-bg); color: var(--badge-low-fg); }
-  .badge.file { background: var(--badge-file-bg); color: var(--badge-file-fg); }
-  .badge.skip { background: #f1f5f9; color: #64748b; }
-  .badge.ai_answer { background: #fae8ff; color: #86198f; }
+  .badge.high     { background: var(--badge-high-bg); color: var(--badge-high-fg); }
+  .badge.medium   { background: var(--badge-med-bg);  color: var(--badge-med-fg); }
+  .badge.low      { background: var(--badge-low-bg);  color: var(--badge-low-fg); }
+  .badge.file     { background: var(--badge-file-bg); color: var(--badge-file-fg); }
+  .badge.skip     { background: #f1f5f9;              color: #64748b; }
+  .badge.ai_answer{ background: #fae8ff;              color: #86198f; }
 
+  /* ── Draft button ── */
+  .btnDraft {
+    margin-top: 5px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    background: #f3e8ff;
+    border: 1px solid #d8b4fe;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(124, 58, 237, 0.08);
+    width: auto;
+  }
+
+  .btnDraft:hover { background: #e9d5ff; border-color: var(--primary); transform: translateY(-1px); }
+  .btnDraft:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  /* ── Chat ── */
   #chatLog {
-    max-height: 250px;
+    max-height: 240px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    padding: 12px;
+    padding: 11px;
     margin-top: 10px;
     background: var(--card-bg);
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
   }
 
-  .chatMsg {
-    margin-bottom: 10px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .chatMsg .who {
-    font-weight: 600;
-    font-size: 10px;
-    color: var(--text-muted);
-    margin-bottom: 3px;
-  }
-
+  .chatMsg { margin-bottom: 10px; display: flex; flex-direction: column; }
+  .chatMsg .who { font-weight: 600; font-size: 10px; color: var(--text-muted); margin-bottom: 3px; }
   .chatMsg.user .who { color: var(--primary); }
   .chatMsg .bubble {
-    padding: 9px 12px;
+    padding: 8px 11px;
     border-radius: 9px;
     background: #f1f5f9;
     color: var(--text-main);
     line-height: 1.45;
   }
+  .chatMsg.user .bubble { background: var(--primary-light); color: var(--primary-dark); font-weight: 500; }
 
-  .chatMsg.user .bubble {
-    background: var(--primary-light);
-    color: var(--primary-dark);
-    font-weight: 500;
+  .chatRow { display: flex; gap: 7px; margin-top: 9px; }
+  .chatRow input { margin: 0; flex: 1; }
+  .chatRow button { width: auto; margin: 0; padding: 8px 14px; }
+
+  /* ── Activity log ── */
+  #panelLog .log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 7px;
   }
 
-  .chatRow {
+  #panelLog .log-header span {
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  #panelLog .log-clear {
+    font-size: 10px;
+    padding: 3px 9px;
+    width: auto;
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    box-shadow: none;
+  }
+
+  #panelLog .log-clear:hover:not(:disabled) {
+    background: #e2e8f0;
+    color: #0f172a;
+    transform: none;
+    box-shadow: none;
+  }
+
+  #logEntries {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    background: var(--card-bg);
+    font-size: 11px;
+  }
+
+  .log-row {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    line-height: 1.4;
+    align-items: flex-start;
   }
 
-  .chatRow input { margin: 0; flex: 1; }
-  .chatRow button { width: auto; margin: 0; padding: 9px 16px; }
+  .log-row:last-child { border-bottom: 0; }
 
+  .log-ts {
+    color: var(--text-muted);
+    font-size: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .log-msg { color: var(--text-main); word-break: break-word; flex: 1; }
+
+  .log-error .log-msg { color: var(--error-text); }
+  .log-warn  .log-msg { color: var(--warning-text); }
+  .log-info  .log-msg { color: var(--text-main); }
+
+  .log-empty {
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  /* ── Settings ── */
   #settings {
     display: none;
-    margin-top: 14px;
-    padding-top: 14px;
+    margin-top: 12px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-color);
   }
 
@@ -428,16 +543,44 @@
 </style>
 </head>
 <body>
+
+<!-- Compact header -->
 <div class="header">
   <h1>TalentOS Copilot</h1>
+  <button class="secondary" id="toggleSettings" style="width:auto;padding:5px 10px;font-size:11px;box-shadow:none;">Settings</button>
 </div>
+
+<!-- Current tab page title -->
 <div class="meta" id="pageTitle">—</div>
 
-<div class="tabs">
-  <div class="tab active" id="tabFill">Fill Form</div>
-  <div class="tab" id="tabChat">Copilot Chat</div>
+<!-- Context card: always visible, shows current ATS / candidate / link status -->
+<div class="ctx-card">
+  <div class="ctx-row">
+    <span class="ctx-label">ATS</span>
+    <span class="ctx-val" id="ctxAts">—</span>
+  </div>
+  <div class="ctx-row">
+    <span class="ctx-label">Candidate</span>
+    <span class="ctx-val" id="ctxCandidate">—</span>
+  </div>
+  <div class="ctx-row">
+    <span class="ctx-label">Link</span>
+    <span class="ctx-val ctx-unlinked" id="ctxLinked">&#x2717; Not linked</span>
+  </div>
+  <div class="ctx-row">
+    <span class="ctx-label">Job</span>
+    <span class="ctx-val" id="ctxJob">—</span>
+  </div>
 </div>
 
+<!-- 3-tab navigation -->
+<div class="tabs">
+  <div class="tab active" id="tabFill">Fill Form</div>
+  <div class="tab" id="tabChat">Chat</div>
+  <div class="tab" id="tabLog">Log</div>
+</div>
+
+<!-- ── Fill Form panel ── -->
 <div class="tabPanel active" id="panelFill">
   <div class="form-group">
     <label>Candidate</label>
@@ -448,9 +591,14 @@
     <select id="resumeSelect"><option>—</option></select>
   </div>
 
+  <!-- Primary actions -->
   <div class="btn-group">
     <button id="analyzeBtn">Analyze Form</button>
     <button class="secondary" id="fillBtn" disabled>Fill Form</button>
+  </div>
+
+  <!-- Secondary actions — hidden until plan is ready -->
+  <div id="secondaryActions">
     <button class="secondary" id="saveBtn" disabled>Save &amp; Learn</button>
     <button class="secondary" id="resumeFileBtn" disabled>Attach Resume PDF</button>
     <button class="secondary" id="coverLetterBtn" disabled>Generate Cover Letter</button>
@@ -460,6 +608,7 @@
   <div class="status" id="status"></div>
 </div>
 
+<!-- ── Chat panel ── -->
 <div class="tabPanel" id="panelChat">
   <div class="meta">Ask questions about the current form fields, candidate profile, or fill plan reasoning.</div>
   <div id="chatLog"></div>
@@ -469,14 +618,25 @@
   </div>
 </div>
 
-<button class="secondary" id="toggleSettings" style="margin-top: 12px;">Settings</button>
+<!-- ── Log panel ── -->
+<div class="tabPanel" id="panelLog">
+  <div class="log-header">
+    <span>Activity Log</span>
+    <button class="secondary log-clear" id="clearLogBtn">Clear</button>
+  </div>
+  <div id="logEntries">
+    <div class="log-empty">No activity yet. Analyze a form to begin.</div>
+  </div>
+</div>
+
+<!-- Settings drawer -->
 <div id="settings">
   <div class="form-group">
     <label>TalentOS URL</label>
-    <input id="baseUrl"/>
+    <input id="baseUrl" type="text"/>
   </div>
   <div class="form-group">
-    <label>API Key (tos_…)</label>
+    <label>API Key (tos_&hellip;)</label>
     <input id="apiKey" type="password"/>
   </div>
   <button id="saveSettings">Save Settings</button>

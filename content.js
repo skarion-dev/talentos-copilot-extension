@@ -365,11 +365,106 @@ function initCopilot() {
     return { ok: true, missing: uniqueMissing };
   }
 
+  // ─── Field verification layer ────────────────────────────────────────────────
+  // Re-reads every filled field after applyFillPlan and compares the actual DOM
+  // value against the intended value. Catches React/Vue controlled inputs, masked
+  // fields, Workday widget state mismatches, and selects that silently rejected
+  // the chosen option.
+  function verifyFillPlan(instructions) {
+    return instructions.map((instr) => {
+      if (instr.fieldType === 'skip' || instr.fieldType === 'file' || instr.fieldType === 'ai_answer') {
+        return { selector: instr.selector, status: 'skipped', reason: instr.fieldType };
+      }
+      let el;
+      try { el = document.querySelector(instr.selector); } catch { el = null; }
+      if (!el) return { selector: instr.selector, status: 'not_found' };
+      if (!el.offsetParent && el.type !== 'radio' && el.type !== 'checkbox') {
+        return { selector: instr.selector, status: 'not_visible' };
+      }
+
+      if (instr.fieldType === 'checkbox') {
+        const want = instr.value === true || instr.value === 'true';
+        return {
+          selector: instr.selector,
+          status: el.checked === want ? 'ok' : 'mismatch',
+          actual: String(el.checked), expected: String(want),
+        };
+      }
+      if (instr.fieldType === 'radio') {
+        const group = [...document.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)];
+        const checked = group.find((r) => r.checked);
+        const actual = checked ? radioChoiceLabel(checked) : null;
+        const want = String(instr.value || '').toLowerCase();
+        const match = actual && (actual.toLowerCase() === want || actual.toLowerCase().includes(want) || want.includes(actual.toLowerCase()));
+        return { selector: instr.selector, status: match ? 'ok' : (actual ? 'mismatch' : 'not_selected'), actual, expected: String(instr.value) };
+      }
+      if (instr.fieldType === 'select') {
+        const opt = el.options[el.selectedIndex];
+        const actual = opt ? opt.textContent.trim() : '';
+        const want = String(instr.value || '').toLowerCase();
+        const match = actual.toLowerCase() === want || actual.toLowerCase().includes(want) || want.includes(actual.toLowerCase());
+        return { selector: instr.selector, status: match ? 'ok' : 'mismatch', actual, expected: String(instr.value) };
+      }
+      // text / email / tel / date / textarea
+      const actual = el.value ?? '';
+      const expected = String(instr.value ?? '');
+      if (actual === expected) return { selector: instr.selector, status: 'ok', actual };
+      // React/Vue controlled: value didn't propagate through framework state
+      if (actual === '' && expected !== '') return { selector: instr.selector, status: 'framework_mismatch', actual, expected };
+      return { selector: instr.selector, status: 'mismatch', actual, expected };
+    });
+  }
+
+  // ─── ATS detection ───────────────────────────────────────────────────────────
+  function detectAts() {
+    const h = location.hostname;
+    if (/greenhouse\.io|boards\.greenhouse\.io/.test(h)) return 'Greenhouse';
+    if (/lever\.co/.test(h)) return 'Lever';
+    if (/workday\.com|myworkdayjobs\.com/.test(h)) return 'Workday';
+    if (/smartrecruiters\.com/.test(h)) return 'SmartRecruiters';
+    if (/ashbyhq\.com/.test(h)) return 'Ashby';
+    if (/zohorecruit\.com|zoho\.com/.test(h)) return 'Zoho';
+    if (/workable\.com/.test(h)) return 'Workable';
+    if (/bamboohr\.com/.test(h)) return 'BambooHR';
+    return 'Unknown';
+  }
+
+  // ─── Submission confirmation detection ───────────────────────────────────────
+  // Reads the visible page text and looks for ATS-specific "application received"
+  // patterns. Called after a submit signal to confirm before flipping TalentOS.
+  function detectSubmissionConfirmation() {
+    const text = (document.body?.innerText || '').replace(/\s+/g, ' ');
+    return /application\s+(has\s+been\s+)?(submitted|received|sent|complete|successful)|thank\s+you\s+for\s+(applying|your\s+application|submitting)|we\s+(have\s+)?received\s+your\s+application|successfully\s+(applied|submitted)|your\s+application\s+(is\s+)?(on\s+file|complete)|submission\s+(was\s+)?successful/i.test(text);
+  }
+
+  // ─── Enhanced submission listener ────────────────────────────────────────────
+  // Watch for SPA route changes and confirmation text appearing in the DOM so
+  // we detect "Applied" even when the page navigates without a full reload.
+  let confirmationObserver = null;
+  function startConfirmationObserver() {
+    if (confirmationObserver) return;
+    confirmationObserver = new MutationObserver(() => {
+      if (detectSubmissionConfirmation()) {
+        reportSubmission();
+        confirmationObserver.disconnect();
+        confirmationObserver = null;
+      }
+    });
+    confirmationObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  window.addEventListener('popstate', () => {
+    setTimeout(() => { if (detectSubmissionConfirmation()) reportSubmission(); }, 500);
+  });
+
   window.__tosScanForm = scanForm;
   window.__tosApplyFillPlan = applyFillPlan;
   window.__tosCaptureCurrentValues = captureCurrentValues;
   window.__tosAttachFile = attachFile;
   window.__tosAuditRequiredFields = auditRequiredFields;
+  window.__tosVerifyFillPlan = verifyFillPlan;
+  window.__tosDetectAts = detectAts;
+  window.__tosDetectSubmissionConfirmation = detectSubmissionConfirmation;
+  window.__tosStartConfirmationObserver = startConfirmationObserver;
 
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
     if (msg.action === 'scanForm') {
@@ -390,6 +485,23 @@ function initCopilot() {
     }
     if (msg.action === 'auditRequiredFields') {
       sendResponse(auditRequiredFields());
+      return true;
+    }
+    if (msg.action === 'verifyFillPlan') {
+      sendResponse({ ok: true, results: verifyFillPlan(msg.instructions) });
+      return true;
+    }
+    if (msg.action === 'detectAts') {
+      sendResponse({ ok: true, ats: detectAts() });
+      return true;
+    }
+    if (msg.action === 'detectSubmissionConfirmation') {
+      sendResponse({ ok: true, confirmed: detectSubmissionConfirmation() });
+      return true;
+    }
+    if (msg.action === 'startConfirmationObserver') {
+      startConfirmationObserver();
+      sendResponse({ ok: true });
       return true;
     }
     return false;
