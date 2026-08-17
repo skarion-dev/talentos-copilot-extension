@@ -110,7 +110,7 @@ function recordTelemetry(event) {
 async function api(path, opts = {}) {
   if (!settings.apiKey) throw new Error('Add your TalentOS API key in Settings.');
   const controller = new AbortController();
-  const timeoutId  = setTimeout(() => controller.abort(), 30000);
+  const timeoutId  = setTimeout(() => controller.abort(), 120000);
   try {
     const res = await fetch(`${settings.baseUrl}${path}`, {
       signal: controller.signal,
@@ -126,7 +126,7 @@ async function api(path, opts = {}) {
     if (!res.ok) throw new Error(b?.error?.message || b?.error || `HTTP ${res.status}`);
     return b;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Request timed out after 30 s. Check your connection.');
+    if (e.name === 'AbortError') throw new Error('Request timed out after 120 s. Check your connection.');
     throw e;
   } finally {
     clearTimeout(timeoutId);
@@ -136,7 +136,7 @@ async function api(path, opts = {}) {
 async function apiBlob(path) {
   if (!settings.apiKey) throw new Error('Add your TalentOS API key in Settings.');
   const controller = new AbortController();
-  const timeoutId  = setTimeout(() => controller.abort(), 30000);
+  const timeoutId  = setTimeout(() => controller.abort(), 120000);
   try {
     const res = await fetch(`${settings.baseUrl}${path}`, {
       signal: controller.signal,
@@ -220,13 +220,34 @@ function parseFillPlanSafe(resp) {
 
 // ─── Content-script bridge ────────────────────────────────────────────────────
 async function send(action, payload = {}) {
-  // Re-inject content script into all frames on every call (idempotent)
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id, allFrames: true },
-      files: ['content.js'],
-    });
-  } catch {}
+  // Guard: chrome.scripting cannot inject into file:// URLs unless the user has
+  // explicitly enabled "Allow access to file URLs" in chrome://extensions.
+  // Detect this early and surface a helpful error instead of silently failing.
+  if (tab?.url?.startsWith('file://')) {
+    // Try injecting; if it fails, throw with clear instructions.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['content.js'],
+      });
+    } catch {
+      throw new Error(
+        'Cannot access local files.\n\nTo analyze local test forms:\n' +
+        '1. Open chrome://extensions\n' +
+        '2. Click Details on TalentOS Copilot\n' +
+        '3. Enable "Allow access to file URLs"\n' +
+        'Then reload this page and try again.'
+      );
+    }
+  } else {
+    // Re-inject content script into all frames on every call (idempotent)
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['content.js'],
+      });
+    } catch {}
+  }
 
   // Multi-frame actions dispatched via executeScript
   const multiFrameActions = {
@@ -240,12 +261,32 @@ async function send(action, payload = {}) {
     applyFillPlan: {
       func: (instructions) => (typeof window.__tosApplyFillPlan === 'function' ? window.__tosApplyFillPlan(instructions) : []),
       args: [payload.instructions],
-      collect: (results) => ({ ok: true, results: (results || []).flatMap((r) => r.result || []) }),
+      collect: (results) => {
+        const all = (results || []).flatMap((r) => r.result || []);
+        // Dedup by selector: prefer applied:true from the frame that actually found the element.
+        const best = new Map();
+        for (const r of all) {
+          const prev = best.get(r.selector);
+          if (!prev || (!prev.applied && r.applied)) best.set(r.selector, r);
+        }
+        return { ok: true, results: [...best.values()] };
+      },
     },
     captureCurrentValues: {
       func: (instructions) => (typeof window.__tosCaptureCurrentValues === 'function' ? window.__tosCaptureCurrentValues(instructions) : []),
       args: [payload.instructions],
-      collect: (results) => ({ ok: true, values: (results || []).flatMap((r) => r.result || []) }),
+      collect: (results) => {
+        const all = (results || []).flatMap((r) => r.result || []);
+        // Dedup by selector across frames: prefer a non-null finalValue.
+        // This prevents cross-origin iframes (reCAPTCHA etc.) from overwriting
+        // the main-frame's real values with nulls.
+        const best = new Map();
+        for (const v of all) {
+          const prev = best.get(v.selector);
+          if (!prev || (prev.finalValue === null && v.finalValue !== null)) best.set(v.selector, v);
+        }
+        return { ok: true, values: [...best.values()] };
+      },
     },
     attachFile: {
       func: (selector, base64, fileName, mimeType) => (
@@ -266,7 +307,17 @@ async function send(action, payload = {}) {
     verifyFillPlan: {
       func: (instructions) => (typeof window.__tosVerifyFillPlan === 'function' ? window.__tosVerifyFillPlan(instructions) : []),
       args: [payload.instructions],
-      collect: (results) => ({ ok: true, results: (results || []).flatMap((r) => r.result || []) }),
+      collect: (results) => {
+        const all = (results || []).flatMap((r) => r.result || []);
+        // Dedup by selector: prefer a non-not_found status so iframe nulls
+        // don't mask the main-frame's real verification result.
+        const best = new Map();
+        for (const r of all) {
+          const prev = best.get(r.selector);
+          if (!prev || prev.status === 'not_found') best.set(r.selector, r);
+        }
+        return { ok: true, results: [...best.values()] };
+      },
     },
     detectAts: {
       func: () => (typeof window.__tosDetectAts === 'function' ? window.__tosDetectAts() : 'Unknown ATS'),
@@ -364,7 +415,6 @@ function isCandidateMandatoryManualField(label) {
 function isEssayQuestionField(label, fieldType) {
   if (fieldType === 'ai_answer') return true;
   const s = String(label || '').toLowerCase();
-  if (isCandidateMandatoryManualField(label)) return false;
   return /\b(describe|tell\s*us|explain|why\b|share\s*an?\b|give\s*an?\b|how\s*did\s*you|what\s*made\s*you|what\s*steps|outline|essay|background)\b/i.test(s);
 }
 
@@ -566,6 +616,33 @@ async function analyze() {
     return;
   }
 
+  // ── Snapshot any in-session manual overrides before we wipe currentPlan ──
+  // If the user has already run a fill + made manual corrections, capture
+  // the live DOM values now so we can re-apply them after re-analysis.
+  let previousManualValues = new Map(); // selector → finalValue
+  if (currentPlan?.instructions?.length) {
+    try {
+      const cap = await send('captureCurrentValues', { instructions: currentPlan.instructions });
+      for (const v of (cap?.values || [])) {
+        const instr = currentPlan.instructions.find((i) => i.selector === v.selector);
+        if (!instr) continue;
+        // Only carry forward values that differ from what the AI suggested
+        // (i.e. the user actually changed something) or where AI had skipped
+        // and the user filled it.
+        const aiNorm    = normalizeForCompare(instr.value);
+        const finalNorm = normalizeForCompare(v.finalValue);
+        if (v.finalValue !== null && finalNorm !== '' && finalNorm !== aiNorm) {
+          previousManualValues.set(v.selector, v.finalValue);
+        } else if (instr.fieldType === 'skip' && v.finalValue !== null && finalNorm !== '' && finalNorm !== 'false') {
+          previousManualValues.set(v.selector, v.finalValue);
+        }
+      }
+      if (previousManualValues.size > 0) {
+        logActivity(`Preserving ${previousManualValues.size} manually-overridden field(s) across re-analysis.`);
+      }
+    } catch { /* non-fatal — best effort */ }
+  }
+
   setStatus('Scanning form…', 'loading');
   logActivity('Starting form analysis…');
 
@@ -589,7 +666,8 @@ async function analyze() {
 
     // Step 3 — AI fill plan
     setStatus(`Found ${scan.fields.length} fields. Asking AI for a fill plan…`, 'loading');
-    const domain = new URL(tab.url).hostname;
+    const parsedUrl = new URL(tab.url);
+    const domain = parsedUrl.hostname || parsedUrl.pathname.split('/').pop() || 'local-file';
     let resp;
     try {
       resp = await api('/api/extension/v1/copilot/fill-plan', {
@@ -619,15 +697,9 @@ async function analyze() {
 
     const fieldLabelBySelector = new Map(scan.fields.map((f) => [f.selector, f.label || f.ariaLabel || f.placeholder || f.name || '']));
 
-    // Step 5 — Apply mandatory field overrides
-    rawPlan.forEach((instr) => {
-      const fieldLabel = fieldLabelBySelector.get(instr.selector) || instr.reasoning || instr.selector;
-      if (isCandidateMandatoryManualField(fieldLabel)) {
-        instr.value = null; instr.fieldType = 'skip'; instr.confidence = 'low';
-        instr.reasoning = 'Candidate-only field: Left for manual candidate completion.';
-      }
-    });
-
+    // Step 5 — Work-auth field override (the only standing policy rule remaining).
+    // Nothing is force-skipped here — the AI decides what to fill or skip based on
+    // available candidate data. Fields it can't answer get 'skip' from the AI itself.
     rawPlan.forEach((instr) => {
       const fieldLabel = fieldLabelBySelector.get(instr.selector) || instr.reasoning || instr.selector;
       if (isWorkAuthField(fieldLabel)) {
@@ -639,9 +711,21 @@ async function analyze() {
 
     // Step 6 — Profile baseline auto-fill
     const activeCandidate = candidates.find((c) => c.id === (resp.candidateId || candidateId));
-    if (activeCandidate) {
-      updateAppContext({ candidateName: activeCandidate.name || '—' });
-      const parts     = (activeCandidate.name || '').trim().split(/\s+/);
+    // Merge backend candidateProfile (freshest DB values) with local candidate object.
+    // Backend always has the authoritative email/linkedin from the DB; the local candidates
+    // list can be stale if the candidate's profile was updated after the last extension refresh.
+    const serverProfile = resp.candidateProfile || {};
+    const mergedCandidate = activeCandidate ? {
+      ...activeCandidate,
+      email:      activeCandidate.email      || serverProfile.email      || null,
+      phone:      activeCandidate.phone      || serverProfile.phone      || null,
+      linkedinUrl: activeCandidate.linkedinUrl || activeCandidate.linkedin || serverProfile.linkedin || null,
+      location:   activeCandidate.location   || serverProfile.location   || null,
+    } : (serverProfile.name ? serverProfile : null);
+
+    if (mergedCandidate) {
+      updateAppContext({ candidateName: mergedCandidate.name || activeCandidate?.name || '—' });
+      const parts     = (mergedCandidate.name || '').trim().split(/\s+/);
       const firstName = parts[0] || '';
       const lastName  = parts.slice(1).join(' ') || '';
 
@@ -652,15 +736,15 @@ async function analyze() {
         if (/\b(first\s*name|given\s*name)\b/i.test(lbl))           targetValue = firstName;
         else if (/\b(last\s*name|surname|family\s*name)\b/i.test(lbl)) targetValue = lastName;
         else if (/\b(full\s*name|^name\*?|your\s*name)\b/i.test(lbl) && !/\b(company|employer|manager|reference|school|university|degree|city|location|country)\b/i.test(lbl))
-          targetValue = activeCandidate.name;
+          targetValue = mergedCandidate.name;
         else if (/\b(email|e-mail)\b/i.test(lbl))
-          targetValue = activeCandidate.email || null;
+          targetValue = mergedCandidate.email || null;
         else if (/\b(phone|mobile|cell|telephone)\b/i.test(lbl))
-          targetValue = activeCandidate.phone;
+          targetValue = mergedCandidate.phone;
         else if (/\b(linkedin|linked\s*in)\b/i.test(lbl))
-          targetValue = activeCandidate.linkedinUrl || activeCandidate.linkedin;
+          targetValue = mergedCandidate.linkedinUrl || mergedCandidate.linkedin;
         else if (/\b(country|city\s*and\s*country|location|city|work\s*from|intend\s*to\s*work)\b/i.test(lbl))
-          targetValue = activeCandidate.location || activeCandidate.city || activeCandidate.country || 'United States';
+          targetValue = mergedCandidate.location || mergedCandidate.city || mergedCandidate.country || 'United States';
 
         if (targetValue) {
           let existingInstr = rawPlan.find((i) => i.selector === f.selector);
@@ -675,6 +759,23 @@ async function analyze() {
           }
         }
       });
+    }
+
+    // Step 6b — Re-apply any manual overrides the user had set before re-analysis
+    if (previousManualValues.size > 0) {
+      for (const instr of rawPlan) {
+        if (previousManualValues.has(instr.selector)) {
+          const savedValue = previousManualValues.get(instr.selector);
+          instr.value = savedValue;
+          // If AI had planned to skip this field but the user filled it, promote to text.
+          if (instr.fieldType === 'skip' || instr.fieldType === 'ai_answer') {
+            instr.fieldType = 'text';
+          }
+          instr.confidence = 'high';
+          instr.reasoning  = 'Preserved from previous manual entry';
+        }
+      }
+      logActivity(`Restored ${previousManualValues.size} manually-overridden field(s) into new plan.`);
     }
 
     // Step 7 — File fields
@@ -706,12 +807,126 @@ async function analyze() {
       domain,
       instructions: rawPlan,
       fieldLabelBySelector,
+      // Real DOM field type per selector (radio/select/checkbox/text/etc.) from the form scan.
+      // Used in saveAndLearn so record-outcome stores the correct field_type, not the AI's
+      // plan type (which could be 'skip' or 'ai_answer' and would break type-aware replay.
+      fieldInputTypeBySelector: new Map(scan.fields.map((f) => [f.selector, f.inputType || f.type || 'text'])),
       coverLetterFileSelector,
       coverLetterTextSelector: resp.coverLetterTextSelector,
       resumeFileSelector,
       matchedApplication: resp.matchedApplication || null,
     };
 
+    // Step 8 — Apply server-side learned corrections as the ABSOLUTE FINAL step.
+    // Runs after every other override (profile baseline, work-auth rule, previousManualValues)
+    // so nothing can re-skip a field the user has taught the system.
+    // Also adds new plan entries for fields the AI completely omitted — e.g. an email field
+    // the AI ignored because it had no value, but the user filled it once and saved it.
+    const learnedCorrections = resp.learnedCorrections || [];
+
+    // Build lookup maps from the full form scan for label and selector matching.
+    const scanFieldByCorrLabel = new Map();   // normalised-label → scan field
+    const scanFieldBySelector  = new Map();   // raw selector → scan field
+    for (const sf of scan.fields) {
+      const lbl = (sf.label || sf.ariaLabel || sf.placeholder || sf.name || '').trim().toLowerCase();
+      if (lbl) scanFieldByCorrLabel.set(lbl, sf);
+      if (sf.selector) scanFieldBySelector.set(sf.selector, sf);
+    }
+
+    let learnedApplied = 0;
+    if (learnedCorrections.length > 0) {
+      logActivity(`Server returned ${learnedCorrections.length} learned correction(s) — applying…`);
+
+      // Helper: build a normalised instruction from a correction + known field type.
+      function buildCorrectedInstr(selector, existingFieldType, correction) {
+        const ft = correction.fieldType || existingFieldType || 'text';
+        let finalVal = correction.finalValue;
+        let finalType = ft;
+        if (ft === 'checkbox' || existingFieldType === 'checkbox') {
+          finalType = 'checkbox';
+          finalVal = finalVal === 'true' || finalVal === '1' || String(finalVal).toLowerCase() === 'yes';
+        } else if (ft === 'skip' || ft === 'ai_answer') {
+          finalType = existingFieldType && !['skip','ai_answer'].includes(existingFieldType) ? existingFieldType : 'text';
+        } else if (['radio', 'select', 'combobox'].includes(existingFieldType)) {
+          finalType = existingFieldType;
+        }
+        return { selector, value: finalVal, fieldType: finalType, confidence: 'high', reasoning: 'Learned from past human correction' };
+      }
+
+      for (const correction of learnedCorrections) {
+        if (correction.finalValue == null) continue;
+        const corrLbl = (correction.fieldLabel || '').trim().toLowerCase();
+        const corrSel = correction.fieldSelector || '';
+
+        // ── 1. Try to find an existing plan instruction ──────────────────────
+        // Priority: exact selector match > exact label match > fuzzy label match.
+        let matchedInstr = null;
+
+        if (corrSel) {
+          // Exact selector — most reliable, immune to label formatting differences.
+          matchedInstr = rawPlan.find((instr) => instr.selector === corrSel);
+        }
+        if (!matchedInstr && corrLbl) {
+          // Exact label match.
+          matchedInstr = rawPlan.find((instr) => {
+            const instrLbl = (fieldLabelBySelector.get(instr.selector) || '').trim().toLowerCase();
+            return instrLbl === corrLbl;
+          });
+        }
+        if (!matchedInstr && corrLbl) {
+          // Fuzzy label match.
+          matchedInstr = rawPlan.find((instr) => {
+            const instrLbl = (fieldLabelBySelector.get(instr.selector) || '').trim().toLowerCase();
+            return corrLbl.length > 3 && (instrLbl.includes(corrLbl) || corrLbl.includes(instrLbl));
+          });
+        }
+
+        if (matchedInstr) {
+          const prevType = matchedInstr.fieldType;
+          const updated = buildCorrectedInstr(matchedInstr.selector, matchedInstr.fieldType, correction);
+          matchedInstr.value     = updated.value;
+          matchedInstr.fieldType = updated.fieldType;
+          matchedInstr.confidence = 'high';
+          matchedInstr.reasoning  = 'Learned from past human correction';
+          logActivity(`  ✓ "${correction.fieldLabel}" (${prevType}→${updated.fieldType}): "${String(updated.value).slice(0, 60)}"`, 'success');
+          learnedApplied++;
+          continue;
+        }
+
+        // ── 2. No plan instruction yet — check if the form has this field ────
+        // Priority: exact selector > exact label > fuzzy label.
+        let scanMatch = null;
+
+        if (corrSel) scanMatch = scanFieldBySelector.get(corrSel) || null;
+        if (!scanMatch && corrLbl) scanMatch = scanFieldByCorrLabel.get(corrLbl) || null;
+        if (!scanMatch && corrLbl) {
+          for (const [lbl, sf] of scanFieldByCorrLabel) {
+            if (corrLbl.length > 3 && (lbl.includes(corrLbl) || corrLbl.includes(lbl))) {
+              scanMatch = sf; break;
+            }
+          }
+        }
+
+        if (scanMatch) {
+          const newInstr = buildCorrectedInstr(scanMatch.selector, scanMatch.inputType || scanMatch.type || 'text', correction);
+          rawPlan.push(newInstr);
+          fieldLabelBySelector.set(scanMatch.selector, scanMatch.label || scanMatch.ariaLabel || scanMatch.placeholder || scanMatch.name || correction.fieldLabel);
+          logActivity(`  ✓ "${correction.fieldLabel}" added to plan (was omitted by AI): "${String(newInstr.value).slice(0, 60)}"`, 'success');
+          learnedApplied++;
+        } else {
+          if (corrLbl) logActivity(`  ⚠ "${correction.fieldLabel}" — no form field found on this page.`, 'warn');
+        }
+      }
+
+      if (learnedApplied > 0) {
+        logActivity(`Applied ${learnedApplied} of ${learnedCorrections.length} learned correction(s).`, 'success');
+      }
+    } else {
+      logActivity('No prior corrections found for this domain/candidate — fill based on AI plan only.');
+    }
+
+    // Render the plan preview AFTER all corrections are applied so it accurately
+    // shows what Fill will do (including learned corrections).
     renderPlanPreview(rawPlan);
     $('fillBtn').disabled       = false;
     $('saveBtn').disabled       = true;
@@ -725,7 +940,8 @@ async function analyze() {
       setStatus(msg, 'success');
       logActivity(msg);
     } else {
-      const msg = `Plan ready — ${rawPlan.length} fields. Review, then Fill.`;
+      const learnNote = learnedApplied > 0 ? ` (${learnedApplied} learned correction(s) applied)` : '';
+      const msg = `Plan ready — ${rawPlan.length} fields${learnNote}. Review, then Fill.`;
       setStatus(msg, 'success');
       logActivity(msg);
     }
@@ -794,43 +1010,125 @@ async function fill() {
 }
 
 // ─── Save & Learn ─────────────────────────────────────────────────────────────
+// Normalize any value to a string for cross-type comparison.
+// Ensures boolean true and string "true" are treated as equal, preventing false
+// "correction" signals when the AI was right.
+function normalizeForCompare(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  return String(v).trim();
+}
+
 async function saveAndLearn() {
   if (!currentPlan) return;
+
+  // Require at least a candidateId to record outcomes usefully.
+  // currentPlan.candidateId can be absent when analyzing a form that isn't
+  // linked to a TalentOS application — fall back to the dropdown selection.
+  const effectiveCandidateId = currentPlan.candidateId || $('candidateSelect').value;
+  if (!effectiveCandidateId) {
+    setStatus('Select a candidate before saving — run Analyze again with a candidate selected.', 'error');
+    return;
+  }
+  // Patch it back so the record-outcome body uses the right ID.
+  if (!currentPlan.candidateId) currentPlan.candidateId = effectiveCandidateId;
+
   setStatus('Recording corrections…', 'loading');
   logActivity('Recording field corrections for learning…');
 
   try {
     const cap = await send('captureCurrentValues', { instructions: currentPlan.instructions });
-    const finalBySelector = new Map((cap.values || []).map((v) => [v.selector, v.finalValue]));
+    const values = cap.values || [];
+
+    // Log capture health
+    const nonNull = values.filter((v) => v.finalValue !== null).length;
+    logActivity(`Captured ${nonNull} of ${values.length} field value(s) from the form.`);
+
+    const finalBySelector = new Map(values.map((v) => [v.selector, v.finalValue]));
+
+    // Include ALL non-file instructions — including 'skip' ones.
+    // Previously, skip fields were excluded, meaning: if the AI skipped a field but
+    // the user manually filled it, that correction was silently dropped and the AI
+    // would repeat the skip on every future run.
     const fields = currentPlan.instructions
-      .filter((i) => i.fieldType !== 'skip' && i.fieldType !== 'file')
-      .map((i) => ({
-        selector:    i.selector,
-        label:       currentPlan.fieldLabelBySelector?.get(i.selector) || i.selector,
-        fieldType:   i.fieldType,
-        aiValue:     i.value,
-        aiConfidence: i.confidence,
-        aiReasoning: i.reasoning,
-        finalValue:  finalBySelector.get(i.selector) ?? null,
-      }));
+      .filter((i) => i.fieldType !== 'file')
+      .map((i) => {
+        const rawFinal = finalBySelector.get(i.selector) ?? null;
+        const label    = currentPlan.fieldLabelBySelector?.get(i.selector) || i.selector;
+
+        // Compute corrected flag so the backend doesn't have to guess.
+        // For 'skip' fields: corrected = user provided a non-empty, non-false value.
+        // For other fields: corrected = final value differs from AI value (type-normalised).
+        let corrected;
+        if (i.fieldType === 'skip') {
+          const norm = normalizeForCompare(rawFinal);
+          corrected = norm !== '' && norm !== 'false';
+        } else {
+          corrected = normalizeForCompare(rawFinal) !== normalizeForCompare(i.value);
+        }
+
+        return {
+          selector:     i.selector,
+          label,
+          // Use the real DOM field type from the scan (radio/select/checkbox/text/etc.) so the
+          // DB stores the correct type for type-aware replay. Fall back to the AI's plan type
+          // only if we don't have scan data (e.g. for fields added by profile baseline).
+          fieldType:    currentPlan.fieldInputTypeBySelector?.get(i.selector) || i.fieldType,
+          aiValue:      i.value,
+          aiConfidence: i.confidence,
+          aiReasoning:  i.reasoning,
+          finalValue:   rawFinal,
+          corrected,
+        };
+      });
+
+    // Log meaningful detail about what was detected
+    const correctedFields  = fields.filter((f) => f.corrected && f.fieldType !== 'skip');
+    const skippedButFilled = fields.filter((f) => f.corrected && f.fieldType === 'skip');
+    const unchanged        = fields.filter((f) => !f.corrected && f.fieldType !== 'skip').length;
+
+    if (correctedFields.length > 0) {
+      logActivity(`Corrections detected (${correctedFields.length}): ${correctedFields.map((f) => `"${f.label}"`).join(', ')}`);
+    }
+    if (skippedButFilled.length > 0) {
+      logActivity(`Manually filled (AI had skipped, ${skippedButFilled.length}): ${skippedButFilled.map((f) => `"${f.label}"`).join(', ')}`);
+    }
+    if (unchanged > 0) {
+      logActivity(`${unchanged} field(s) matched AI suggestions — no correction.`);
+    }
+
+    // Log every field being sent so the user can see what was captured
+    logActivity(`Sending ${fields.length} field outcome(s) to server:`);
+    fields.forEach((f) => {
+      const aiStr    = f.aiValue == null ? '(skipped)' : `"${String(f.aiValue).slice(0, 40)}"`;
+      const finalStr = f.finalValue == null ? '(empty)' : `"${String(f.finalValue).slice(0, 40)}"`;
+      const corrStr  = f.corrected ? ' ← CORRECTION' : '';
+      logActivity(`  [${f.fieldType}] "${f.label.slice(0, 50)}" AI=${aiStr} → Final=${finalStr}${corrStr}`, f.corrected ? 'warn' : 'info');
+    });
 
     const r = await api('/api/extension/v1/copilot/record-outcome', {
       method: 'POST',
       body: JSON.stringify({
-        applicationId: currentPlan.applicationId,
+        applicationId: currentPlan.applicationId || undefined,
         candidateId:   currentPlan.candidateId,
         domain:        currentPlan.domain,
         fields,
       }),
     });
-    const msg = `Saved ${r.recorded} field outcome(s). The AI will use corrections next time.`;
+
+    // API may return { recorded } or { count } or { success: true }
+    const saved    = r.recorded ?? r.count ?? fields.length;
+    const corrCount = correctedFields.length + skippedButFilled.length;
+    const msg = corrCount > 0
+      ? `Saved ${saved} field outcome(s) — ${corrCount} correction(s) recorded for learning.`
+      : `Saved ${saved} field outcome(s) — AI choices accepted, no corrections needed.`;
     logActivity(msg);
     setStatus(msg, 'success');
     $('saveBtn').disabled = true;
-    recordTelemetry({ event: 'save_and_learn', recorded: r.recorded });
+    recordTelemetry({ event: 'save_and_learn', recorded: saved, corrected: corrCount });
   } catch (e) {
     logActivity(`Save failed: ${e.message}`, 'error');
-    setStatus(e.message, 'error');
+    setStatus(`Save failed: ${e.message}`, 'error');
   }
 }
 
@@ -1022,7 +1320,7 @@ async function generateAndAttachCoverLetter() {
 async function refresh() {
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   $('pageTitle').textContent = tab?.title || '—';
-  const okPage = tab && /^https?:/.test(tab.url || '');
+  const okPage = tab && /^(https?|file):/.test(tab.url || '');
   $('analyzeBtn').disabled = !okPage;
   currentPlan = null;
   $('fillBtn').disabled        = true;
